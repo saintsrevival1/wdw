@@ -1,0 +1,2685 @@
+-- // Services
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local GuiService = game:GetService("GuiService")
+
+-- // Variables
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+local Library = {}
+Library.Flags = {}
+Library.Windows = {}
+Library.Keybinds = {}
+Library.Connections = {}
+Library.Binding = false
+Library.Unloaded = false
+
+local WindowClass = {}
+WindowClass.__index = WindowClass
+
+local TabClass = {}
+TabClass.__index = TabClass
+
+local SectionClass = {}
+SectionClass.__index = SectionClass
+
+local ActiveDrag = nil
+local ActivePopup = nil
+local InputInitialized = false
+local NotificationHolder = nil
+local IconLookup = nil
+local MouseOffset = Vector2.new(0, 0)
+
+local Theme = {
+	Accent = Color3.fromRGB(64, 180, 255),
+	AccentDark = Color3.fromRGB(30, 96, 150),
+	Background = Color3.fromRGB(10, 11, 12),
+	Surface = Color3.fromRGB(13, 14, 17),
+	Section = Color3.fromRGB(17, 18, 22),
+	Element = Color3.fromRGB(27, 29, 36),
+	ElementHover = Color3.fromRGB(35, 38, 47),
+	Stroke = Color3.fromRGB(26, 28, 33),
+	StrokeLight = Color3.fromRGB(40, 43, 52),
+	Text = Color3.fromRGB(255, 255, 255),
+	SubText = Color3.fromRGB(98, 110, 133),
+}
+
+local Fonts = {
+	Regular = Font.new("rbxasset://fonts/families/Nunito.json", Enum.FontWeight.Regular, Enum.FontStyle.Normal),
+	SemiBold = Font.new("rbxasset://fonts/families/Nunito.json", Enum.FontWeight.SemiBold, Enum.FontStyle.Normal),
+	Bold = Font.new("rbxasset://fonts/families/Nunito.json", Enum.FontWeight.Bold, Enum.FontStyle.Normal),
+}
+
+local Animations = {
+	Fast = TweenInfo.new(0.1, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+	Smooth = TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+	Page = TweenInfo.new(0.36, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+	Spring = TweenInfo.new(0.38, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+	Dramatic = TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+	Exit = TweenInfo.new(0.13, Enum.EasingStyle.Quint, Enum.EasingDirection.In),
+	Close = TweenInfo.new(0.32, Enum.EasingStyle.Back, Enum.EasingDirection.In),
+	Veil = TweenInfo.new(0.22, Enum.EasingStyle.Sine, Enum.EasingDirection.In),
+}
+
+local Layout = {
+	WindowSize = Vector2.new(712, 550),
+	RailWidth = 60,
+	TopBarHeight = 42,
+	RowHeight = 30,
+	WellHeight = 22,
+	TabButtonSize = 40,
+	TabButtonSpacing = 6,
+	DropdownWidth = 132,
+	DropdownItemHeight = 26,
+	DropdownMaxItems = 6,
+	DragSpeed = 26,
+	ShadowSpread = 22,
+	ShadowTransparency = 0.7,
+}
+
+local ShadowImage = "rbxassetid://6015897843"
+local ShadowSlice = Rect.new(49, 49, 450, 450)
+
+local IconAliases = {
+	["house"] = "home",
+	["chart-bar"] = "bar-chart",
+	["chart-line"] = "line-chart",
+}
+
+local IconSheets = {
+	["16898612629"] = "arrow-up-right,918,147",
+	["16898612819"] = "bell,820,257;check,710,869;chevron-down,196,918;chevron-right,869,759;circle-check,869,955",
+	["16898613044"] = "crosshair,453,869",
+	["16898613353"] = "footprints,918,710",
+	["16898613509"] = "gauge,771,955;hand,563,820;keyboard,453,820;magnet,967,906",
+	["16898613613"] = "mouse-pointer,612,869;move,453,820;palette,453,918;panel-left-open,196,967",
+	["16898613777"] = "scan-eye,869,759;shield,869,0;skull,49,869;sliders-horizontal,820,355;snowflake,771,661",
+	["16898613869"] = "trending-up,514,918;users,967,98;volume-2,771,808;wind,820,857;wrench,820,906;x,869,906",
+}
+
+local KeyNames = {
+	LeftShift = "LShift",
+	RightShift = "RShift",
+	LeftControl = "LCtrl",
+	RightControl = "RCtrl",
+	LeftAlt = "LAlt",
+	RightAlt = "RAlt",
+	MouseButton2 = "MB2",
+	MouseButton3 = "MB3",
+	ButtonL1 = "L1",
+	ButtonR1 = "R1",
+	ButtonL2 = "L2",
+	ButtonR2 = "R2",
+	ButtonL3 = "L3",
+	ButtonR3 = "R3",
+}
+
+-- // Utilities
+local function Create(ClassName, Properties, Children)
+	local Object = Instance.new(ClassName)
+
+	for Property, Value in Properties do
+		if Property ~= "Parent" then
+			Object[Property] = Value
+		end
+	end
+
+	if Children then
+		for _, Child in Children do
+			Child.Parent = Object
+		end
+	end
+
+	if Properties.Parent then
+		Object.Parent = Properties.Parent
+	end
+
+	return Object
+end
+
+local function Merge(Defaults, Overrides)
+	local Result = {}
+
+	for Key, Value in Defaults do
+		Result[Key] = Value
+	end
+
+	for Key, Value in Overrides do
+		Result[Key] = Value
+	end
+
+	return Result
+end
+
+local function Tween(Object, Information, Goal)
+	local NewTween = TweenService:Create(Object, Information, Goal)
+	NewTween:Play()
+	return NewTween
+end
+
+local function Connect(Signal, Callback)
+	local Connection = Signal:Connect(Callback)
+	table.insert(Library.Connections, Connection)
+	return Connection
+end
+
+local function SafeCall(Callback, ...)
+	if typeof(Callback) ~= "function" then return end
+
+	task.spawn(function(...)
+		local Success, Message = pcall(Callback, ...)
+
+		if not Success then
+			warn("[UI] Callback error: " .. tostring(Message))
+		end
+	end, ...)
+end
+
+local function RoundNumber(Value, Decimals)
+	local Power = 10 ^ (Decimals or 0)
+	return math.round(Value * Power) / Power
+end
+
+local function FormatNumber(Value, Decimals)
+	return string.format("%." .. tostring(Decimals or 0) .. "f", Value)
+end
+
+local function ToHex(Color)
+	return string.format("#%02X%02X%02X", math.round(Color.R * 255), math.round(Color.G * 255), math.round(Color.B * 255))
+end
+
+local function FromHex(Text)
+	local Red, Green, Blue = string.match(Text, "^%s*#?(%x%x)(%x%x)(%x%x)%s*$")
+
+	if not Red then return nil end
+
+	return Color3.fromRGB(tonumber(Red, 16), tonumber(Green, 16), tonumber(Blue, 16))
+end
+
+local function EscapeRichText(Text)
+	Text = string.gsub(Text, "&", "&amp;")
+	Text = string.gsub(Text, "<", "&lt;")
+	Text = string.gsub(Text, ">", "&gt;")
+	return Text
+end
+
+local function GetViewportSize()
+	local Camera = workspace.CurrentCamera
+	return Camera and Camera.ViewportSize or Vector2.new(1920, 1080)
+end
+
+local function GetInputPosition(Input)
+	if Input.UserInputType ~= Enum.UserInputType.Touch then
+		return UserInputService:GetMouseLocation() + MouseOffset
+	end
+
+	local Inset = GuiService:GetGuiInset()
+	return Vector2.new(Input.Position.X + Inset.X, Input.Position.Y + Inset.Y)
+end
+
+local function IsPointInside(Object, Point)
+	local Position = Object.AbsolutePosition
+	local Size = Object.AbsoluteSize
+
+	return Point.X >= Position.X and Point.X <= Position.X + Size.X
+		and Point.Y >= Position.Y and Point.Y <= Position.Y + Size.Y
+end
+
+local function IsPressInput(Input)
+	return Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch
+end
+
+local function CalibrateMouse(Object, ScreenGui)
+	local Raw = UserInputService:GetMouseLocation()
+	local Candidates = {Vector2.new(0, 0), -GuiService:GetGuiInset(), ScreenGui.AbsolutePosition}
+	local Fits = {}
+
+	for _, Offset in Candidates do
+		if IsPointInside(Object, Raw + Offset) then
+			local Known = false
+
+			for _, Fit in Fits do
+				if (Fit - Offset).Magnitude < 0.5 then
+					Known = true
+				end
+			end
+
+			if not Known then
+				table.insert(Fits, Offset)
+			end
+		end
+	end
+
+	if #Fits == 1 then
+		MouseOffset = Fits[1]
+	end
+end
+
+local function SetAccent(Color)
+	Theme.Accent = Color
+	Theme.AccentDark = Color:Lerp(Theme.Background, 0.79)
+end
+
+local function GetIcon(Name)
+	if not IconLookup then
+		IconLookup = {}
+
+		for AssetId, Data in IconSheets do
+			for Entry in string.gmatch(Data, "[^;]+") do
+				local IconName, X, Y = string.match(Entry, "^(.-),(%d+),(%d+)$")
+
+				IconLookup[IconName] = {
+					Image = "rbxassetid://" .. AssetId,
+					ImageRectOffset = Vector2.new(tonumber(X), tonumber(Y)),
+					ImageRectSize = Vector2.new(48, 48),
+					Lucide = true,
+				}
+			end
+		end
+	end
+
+	Name = string.lower(Name)
+
+	return IconLookup[Name] or IconLookup[IconAliases[Name] or ""]
+end
+
+local function ResolveIcon(Icon, RectOffset, RectSize)
+	if typeof(Icon) == "number" then
+		Icon = "rbxassetid://" .. tostring(Icon)
+	end
+
+	if typeof(Icon) ~= "string" or Icon == "" then return nil end
+
+	if string.find(Icon, "://", 1, true) then
+		return {
+			Image = Icon,
+			ImageRectOffset = RectOffset or Vector2.new(0, 0),
+			ImageRectSize = RectSize or Vector2.new(0, 0),
+			Lucide = false,
+		}
+	end
+
+	local Found = GetIcon(Icon)
+
+	if not Found then
+		warn("[UI] Unknown icon \"" .. Icon .. "\"")
+	end
+
+	return Found
+end
+
+local function Corner(Radius)
+	return Create("UICorner", {CornerRadius = Radius == 1 and UDim.new(1, 0) or UDim.new(0, Radius)})
+end
+
+local function Stroke(Color, Thickness)
+	return Create("UIStroke", {
+		Color = Color or Theme.Stroke,
+		Thickness = Thickness or 1.5,
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+	})
+end
+
+local function CreateGlow(Parent, Transparency, Blur)
+	local Success, Glow = pcall(Instance.new, "UIShadow")
+
+	if not Success or not Glow then return nil end
+
+	pcall(function()
+		Glow.Color = Theme.Accent
+		Glow.Transparency = Transparency or 0.5
+		Glow.BlurRadius = UDim.new(0, Blur or 8)
+		Glow.Spread = UDim2.new(0, 1, 0, 1)
+		Glow.Offset = UDim2.new(0, 0, 0, 0)
+		Glow.Enabled = true
+		Glow.Parent = Parent
+	end)
+
+	return Glow
+end
+
+local function CreateLabel(Properties)
+	return Create("TextLabel", Merge({
+		BackgroundTransparency = 1,
+		FontFace = Fonts.Regular,
+		TextSize = 14,
+		TextColor3 = Theme.Text,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+	}, Properties))
+end
+
+local function CreateIcon(Icon, Properties)
+	return Create("ImageLabel", Merge({
+		BackgroundTransparency = 1,
+		Image = Icon.Image,
+		ImageRectOffset = Icon.ImageRectOffset,
+		ImageRectSize = Icon.ImageRectSize,
+		ScaleType = Enum.ScaleType.Fit,
+	}, Properties))
+end
+
+local function CreateHitbox(Properties)
+	return Create("TextButton", Merge({
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		AutoButtonColor = false,
+		Text = "",
+		ZIndex = 5,
+	}, Properties))
+end
+
+local function GetKeyName(Key)
+	if not Key then return "None" end
+	return KeyNames[Key.Name] or Key.Name
+end
+
+local function KeyMatches(Key, Input)
+	if not Key then return false end
+
+	if Key.EnumType == Enum.KeyCode then
+		return Input.KeyCode == Key
+	end
+
+	return Input.UserInputType == Key
+end
+
+local function BeginDrag(Input, Drag)
+	Drag.Mouse = Input.UserInputType ~= Enum.UserInputType.Touch
+	ActiveDrag = Drag
+	Drag.Update(GetInputPosition(Input))
+end
+
+local function EndDrag()
+	local Drag = ActiveDrag
+	if not Drag then return end
+
+	ActiveDrag = nil
+
+	if Drag.Finish then
+		Drag.Finish()
+	end
+end
+
+local function ClosePopup()
+	if not ActivePopup then return end
+
+	local Popup = ActivePopup
+	ActivePopup = nil
+	Popup.Dismiss.Visible = false
+	Popup.Close()
+end
+
+local function ReleasePopup(Frame)
+	if ActivePopup and ActivePopup.Frame == Frame then
+		ActivePopup.Dismiss.Visible = false
+		ActivePopup = nil
+	end
+end
+
+local function PositionPopup(Popup)
+	local Anchor = Popup.Anchor
+	local Parent = Popup.Frame.Parent
+	local AnchorPosition = Anchor.AbsolutePosition
+	local AnchorSize = Anchor.AbsoluteSize
+	local Origin = Parent.AbsolutePosition
+	local Bounds = Parent.AbsoluteSize
+
+	local X = AnchorPosition.X + AnchorSize.X - Popup.Width
+	local Y = AnchorPosition.Y + AnchorSize.Y + 4
+
+	if Y + Popup.Height > Origin.Y + Bounds.Y - 8 then
+		Y = AnchorPosition.Y - Popup.Height - 4
+	end
+
+	X = math.clamp(X, Origin.X + 8, math.max(Origin.X + 8, Origin.X + Bounds.X - Popup.Width - 8))
+
+	Popup.Frame.Position = UDim2.fromOffset(X - Origin.X, Y - Origin.Y)
+end
+
+local function OpenPopup(Popup)
+	ClosePopup()
+	ActivePopup = Popup
+	Popup.Dismiss.Visible = true
+	PositionPopup(Popup)
+end
+
+local function InitializeInput()
+	if InputInitialized then return end
+	InputInitialized = true
+
+	Connect(UserInputService.InputChanged, function(Input)
+		if ActiveDrag and not ActiveDrag.Mouse and Input.UserInputType == Enum.UserInputType.Touch then
+			ActiveDrag.Update(GetInputPosition(Input))
+		end
+	end)
+
+	Connect(UserInputService.InputEnded, function(Input)
+		if ActiveDrag and IsPressInput(Input) then
+			EndDrag()
+		end
+	end)
+
+	Connect(UserInputService.WindowFocusReleased, EndDrag)
+
+	Connect(RunService.RenderStepped, function()
+		if not ActiveDrag or not ActiveDrag.Mouse then return end
+
+		if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+			EndDrag()
+			return
+		end
+
+		ActiveDrag.Update(UserInputService:GetMouseLocation())
+	end)
+
+	Connect(UserInputService.InputBegan, function(Input)
+		if Library.Binding or UserInputService:GetFocusedTextBox() then return end
+
+		for _, Window in Library.Windows do
+			if KeyMatches(Window.ToggleKey, Input) then
+				Window:Toggle()
+			end
+		end
+
+		for _, Keybind in Library.Keybinds do
+			if KeyMatches(Keybind.Value, Input) then
+				SafeCall(Keybind.Pressed, Keybind.Value)
+			end
+		end
+	end)
+
+	Connect(RunService.RenderStepped, function()
+		if not ActivePopup then return end
+
+		local Anchor = ActivePopup.Anchor
+		local Center = Anchor.AbsolutePosition + Anchor.AbsoluteSize / 2
+
+		if not IsPointInside(ActivePopup.ClipFrame, Center) then
+			ClosePopup()
+			return
+		end
+
+		PositionPopup(ActivePopup)
+	end)
+end
+
+local function GetNotificationHolder()
+	if NotificationHolder and NotificationHolder.Parent then
+		return NotificationHolder
+	end
+
+	local ScreenGui = Create("ScreenGui", {
+		Name = "UINotifications",
+		ResetOnSpawn = false,
+		IgnoreGuiInset = true,
+		DisplayOrder = 200,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+		Parent = PlayerGui,
+	})
+
+	NotificationHolder = Create("Frame", {
+		Name = "Holder",
+		AnchorPoint = Vector2.new(1, 1),
+		BackgroundTransparency = 1,
+		Position = UDim2.new(1, -16, 1, -16),
+		Size = UDim2.new(0, 280, 1, -32),
+		Parent = ScreenGui,
+	}, {
+		Create("UIListLayout", {
+			Padding = UDim.new(0, 8),
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			VerticalAlignment = Enum.VerticalAlignment.Bottom,
+		}),
+	})
+
+	Library.NotificationGui = ScreenGui
+
+	return NotificationHolder
+end
+
+local function CreateRow(Section, Name, Height)
+	Section.Order += 1
+
+	return Create("Frame", {
+		Name = Name,
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, Height or Layout.RowHeight),
+		LayoutOrder = Section.Order,
+		Parent = Section.Holder,
+	})
+end
+
+local function AddHover(Hitbox, Target, NormalColor, HoverColor)
+	Hitbox.MouseEnter:Connect(function()
+		Tween(Target, Animations.Fast, {BackgroundColor3 = HoverColor})
+	end)
+
+	Hitbox.MouseLeave:Connect(function()
+		Tween(Target, Animations.Fast, {BackgroundColor3 = NormalColor})
+	end)
+end
+
+function Library.Notify(_, NotifyOptions)
+	local Holder = GetNotificationHolder()
+	local Duration = NotifyOptions.Duration or 4
+
+	Library.NotificationCount = (Library.NotificationCount or 0) + 1
+
+	local Wrapper = Create("Frame", {
+		Name = "Notification",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 0),
+		LayoutOrder = Library.NotificationCount,
+		Parent = Holder,
+	})
+
+	local Card = Create("Frame", {
+		Name = "Card",
+		BackgroundColor3 = Theme.Section,
+		Position = UDim2.new(1, 140, 0, 0),
+		Size = UDim2.new(1, 0, 0, 0),
+		Parent = Wrapper,
+	}, {
+		Corner(8),
+		Stroke(Theme.StrokeLight, 1),
+	})
+
+	local Content = Create("Frame", {
+		Name = "Content",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Parent = Card,
+	}, {
+		Create("UIListLayout", {Padding = UDim.new(0, 2), SortOrder = Enum.SortOrder.LayoutOrder}),
+		Create("UIPadding", {
+			PaddingTop = UDim.new(0, 11),
+			PaddingBottom = UDim.new(0, 17),
+			PaddingLeft = UDim.new(0, 48),
+			PaddingRight = UDim.new(0, 12),
+		}),
+		CreateLabel({
+			Name = "Title",
+			FontFace = Fonts.Bold,
+			Text = NotifyOptions.Title or "Notification",
+			TextSize = 15,
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			TextWrapped = true,
+			TextTruncate = Enum.TextTruncate.None,
+			LayoutOrder = 1,
+		}),
+		CreateLabel({
+			Name = "Body",
+			Text = NotifyOptions.Content or "",
+			TextColor3 = Theme.SubText,
+			TextSize = 14,
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			TextWrapped = true,
+			TextTruncate = Enum.TextTruncate.None,
+			LayoutOrder = 2,
+		}),
+	})
+
+	local NotifyIcon = ResolveIcon(NotifyOptions.Icon or "bell") or GetIcon("bell")
+
+	Create("Frame", {
+		Name = "IconTile",
+		BackgroundColor3 = Theme.AccentDark,
+		Position = UDim2.fromOffset(12, 12),
+		Size = UDim2.fromOffset(26, 26),
+		Parent = Card,
+	}, {
+		Corner(7),
+		CreateIcon(NotifyIcon, {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			ImageColor3 = Theme.Accent,
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromOffset(14, 14),
+		}),
+	})
+
+	local Progress = Create("Frame", {
+		Name = "Progress",
+		AnchorPoint = Vector2.new(0, 1),
+		BackgroundColor3 = Theme.Accent,
+		BorderSizePixel = 0,
+		Position = UDim2.new(0, 12, 1, -7),
+		Size = UDim2.new(1, -24, 0, 2),
+		Parent = Card,
+	}, {
+		Corner(1),
+	})
+
+	local function Resize()
+		local Height = Content.AbsoluteSize.Y
+		Card.Size = UDim2.new(1, 0, 0, Height)
+		Tween(Wrapper, Animations.Smooth, {Size = UDim2.new(1, 0, 0, Height)})
+	end
+
+	Content:GetPropertyChangedSignal("AbsoluteSize"):Connect(Resize)
+	Resize()
+
+	Tween(Card, Animations.Dramatic, {Position = UDim2.new(0, 0, 0, 0)})
+	Tween(Progress, TweenInfo.new(Duration, Enum.EasingStyle.Linear), {Size = UDim2.new(0, 0, 0, 2)})
+
+	task.delay(Duration, function()
+		if not Wrapper.Parent then return end
+
+		Tween(Card, Animations.Exit, {Position = UDim2.new(1, 140, 0, 0)})
+		task.wait(0.2)
+		Tween(Wrapper, Animations.Smooth, {Size = UDim2.new(1, 0, 0, 0)})
+		task.wait(0.3)
+		Wrapper:Destroy()
+	end)
+end
+
+function Library.GetIcon(_, Name)
+	return GetIcon(Name)
+end
+
+function Library.Unload()
+	Library.Unloaded = true
+	ClosePopup()
+	ActiveDrag = nil
+
+	for _, Connection in Library.Connections do
+		Connection:Disconnect()
+	end
+
+	for _, Window in Library.Windows do
+		Window.ScreenGui:Destroy()
+	end
+
+	if Library.NotificationGui then
+		Library.NotificationGui:Destroy()
+	end
+
+	table.clear(Library.Connections)
+	table.clear(Library.Windows)
+	table.clear(Library.Keybinds)
+	InputInitialized = false
+	NotificationHolder = nil
+end
+
+function Library.CreateWindow(_, WindowOptions)
+	WindowOptions = WindowOptions or {}
+
+	local Title = WindowOptions.Title or "Example"
+	local WindowSize = WindowOptions.Size or Layout.WindowSize
+
+	if WindowOptions.Accent then
+		SetAccent(WindowOptions.Accent)
+	end
+
+	InitializeInput()
+
+	local ScreenGui = Create("ScreenGui", {
+		Name = string.gsub(Title, "%s", "") .. "UI",
+		ResetOnSpawn = false,
+		IgnoreGuiInset = true,
+		DisplayOrder = 100,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+		Parent = PlayerGui,
+	})
+
+	local Root = Create("Frame", {
+		Name = "Root",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		BackgroundTransparency = 1,
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(WindowSize.X, WindowSize.Y),
+		Parent = ScreenGui,
+	})
+
+	local RootScale = Create("UIScale", {Scale = 0.78, Parent = Root})
+
+	local Shadow = Create("ImageLabel", {
+		Name = "Shadow",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0.5, 0, 0.5, 6),
+		Size = UDim2.new(1, Layout.ShadowSpread * 2, 1, Layout.ShadowSpread * 2),
+		Image = ShadowImage,
+		ImageColor3 = Color3.fromRGB(0, 0, 0),
+		ImageTransparency = 1,
+		ScaleType = Enum.ScaleType.Slice,
+		SliceCenter = ShadowSlice,
+		ZIndex = 0,
+		Parent = Root,
+	})
+
+	local Background = Create("Frame", {
+		Name = "Background",
+		BackgroundColor3 = Theme.Background,
+		BorderSizePixel = 0,
+		Size = UDim2.fromScale(1, 1),
+		ClipsDescendants = true,
+		Parent = Root,
+	}, {
+		Corner(12),
+		Stroke(Theme.StrokeLight, 1),
+	})
+
+	local Aurora = Create("Frame", {
+		Name = "Aurora",
+		BackgroundColor3 = Theme.Accent,
+		BorderSizePixel = 0,
+		Size = UDim2.fromScale(1, 1),
+		Parent = Background,
+	}, {
+		Corner(12),
+		Create("UIGradient", {
+			Rotation = 40,
+			Transparency = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 0.78),
+				NumberSequenceKeypoint.new(0.4, 1),
+				NumberSequenceKeypoint.new(1, 1),
+			}),
+		}),
+	})
+
+	local AuroraGradient = Aurora:FindFirstChildOfClass("UIGradient")
+
+	Connect(RunService.RenderStepped, function()
+		local Time = os.clock()
+
+		AuroraGradient.Rotation = 40 + math.sin(Time * 0.7) * 22
+		AuroraGradient.Offset = Vector2.new(math.sin(Time * 0.5) * 0.18, math.cos(Time * 0.4) * 0.12)
+	end)
+
+	local LeftBar = Create("Frame", {
+		Name = "LeftBar",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(0, Layout.RailWidth, 1, 0),
+		Parent = Background,
+	})
+
+	local LogoIcon = ResolveIcon(WindowOptions.Icon, WindowOptions.ImageRectOffset, WindowOptions.ImageRectSize)
+
+	local LogoTile = Create("TextLabel", {
+		Name = "Logo",
+		AnchorPoint = Vector2.new(0.5, 0),
+		BackgroundColor3 = Theme.AccentDark,
+		BackgroundTransparency = (LogoIcon and not LogoIcon.Lucide) and 1 or 0,
+		Position = UDim2.new(0.5, 0, 0, 15),
+		Size = UDim2.fromOffset(30, 30),
+		FontFace = Fonts.Bold,
+		Text = LogoIcon and "" or string.upper(string.sub(Title, 1, 1)),
+		TextColor3 = Theme.Accent,
+		TextSize = 16,
+		Parent = LeftBar,
+	}, {
+		Corner(9),
+	})
+
+	if LogoIcon then
+		CreateIcon(LogoIcon, {
+			Name = "Icon",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			ImageColor3 = LogoIcon.Lucide and Theme.Accent or Color3.fromRGB(255, 255, 255),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = LogoIcon.Lucide and UDim2.fromOffset(18, 18) or UDim2.fromScale(0.9, 0.9),
+			Parent = LogoTile,
+		})
+	end
+
+	Create("Frame", {
+		Name = "Separator",
+		AnchorPoint = Vector2.new(0.5, 0),
+		BackgroundColor3 = Theme.StrokeLight,
+		BorderSizePixel = 0,
+		Position = UDim2.new(0.5, 0, 0, 58),
+		Size = UDim2.fromOffset(22, 1),
+		Parent = LeftBar,
+	})
+
+	local TabList = Create("ScrollingFrame", {
+		Name = "TabList",
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(0, 72),
+		Size = UDim2.new(1, 0, 1, -130),
+		CanvasSize = UDim2.fromOffset(0, 0),
+		ScrollBarThickness = 0,
+		ScrollingDirection = Enum.ScrollingDirection.Y,
+		Parent = LeftBar,
+	})
+
+	local Indicator = Create("Frame", {
+		Name = "Indicator",
+		BackgroundColor3 = Theme.Accent,
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(0, 16),
+		Size = UDim2.fromOffset(3, 16),
+		ZIndex = 3,
+		Parent = TabList,
+	}, {
+		Corner(1),
+	})
+
+	local IndicatorGlow = CreateGlow(Indicator, 1, 8)
+
+	local Avatar = Create("ImageLabel", {
+		Name = "Avatar",
+		AnchorPoint = Vector2.new(0.5, 1),
+		BackgroundColor3 = Theme.Element,
+		Position = UDim2.new(0.5, 0, 1, -16),
+		Size = UDim2.fromOffset(30, 30),
+		Parent = LeftBar,
+	}, {
+		Corner(1),
+		Stroke(Theme.StrokeLight, 1),
+	})
+
+	if LocalPlayer.UserId > 0 then
+		Avatar.Image = "rbxthumb://type=AvatarHeadShot&id=" .. LocalPlayer.UserId .. "&w=48&h=48"
+	end
+
+	local Main = Create("Frame", {
+		Name = "Main",
+		AnchorPoint = Vector2.new(0, 0.5),
+		BackgroundColor3 = Theme.Surface,
+		BorderSizePixel = 0,
+		Position = UDim2.new(0, Layout.RailWidth, 0.5, 0),
+		Size = UDim2.new(1, -(Layout.RailWidth + 10), 1, -20),
+		Parent = Background,
+	}, {
+		Corner(10),
+		Stroke(Theme.Stroke, 1),
+		Create("Frame", {
+			Name = "Aurora",
+			BackgroundColor3 = Theme.Accent,
+			BorderSizePixel = 0,
+			Size = UDim2.fromScale(1, 1),
+		}, {
+			Corner(10),
+			Create("UIGradient", {
+				Rotation = 50,
+				Transparency = NumberSequence.new({
+					NumberSequenceKeypoint.new(0, 0.93),
+					NumberSequenceKeypoint.new(0.45, 1),
+					NumberSequenceKeypoint.new(1, 1),
+				}),
+			}),
+		}),
+		Create("Frame", {
+			Name = "Highlight",
+			AnchorPoint = Vector2.new(0.5, 0),
+			BackgroundColor3 = Theme.Accent,
+			BorderSizePixel = 0,
+			Position = UDim2.fromScale(0.5, 0),
+			Size = UDim2.new(0.6, 0, 0, 1),
+			ZIndex = 2,
+		}, {
+			Create("UIGradient", {
+				Transparency = NumberSequence.new({
+					NumberSequenceKeypoint.new(0, 1),
+					NumberSequenceKeypoint.new(0.5, 0.35),
+					NumberSequenceKeypoint.new(1, 1),
+				}),
+			}),
+		}),
+	})
+
+	local TopBar = Create("Frame", {
+		Name = "TopBar",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, Layout.TopBarHeight),
+		Parent = Main,
+	}, {
+		Create("Frame", {
+			Name = "Line",
+			AnchorPoint = Vector2.new(0, 1),
+			BackgroundColor3 = Theme.Stroke,
+			BorderSizePixel = 0,
+			Position = UDim2.fromScale(0, 1),
+			Size = UDim2.new(1, 0, 0, 1),
+		}),
+		CreateIcon(GetIcon("chevron-right"), {
+			Name = "Arrow",
+			AnchorPoint = Vector2.new(0, 0.5),
+			ImageColor3 = Theme.Accent,
+			Position = UDim2.new(0, 14, 0.5, 0),
+			Size = UDim2.fromOffset(18, 18),
+		}),
+		CreateIcon(GetIcon("move"), {
+			Name = "Drag",
+			AnchorPoint = Vector2.new(1, 0.5),
+			ImageColor3 = Theme.SubText,
+			Position = UDim2.new(1, -44, 0.5, 0),
+			Size = UDim2.fromOffset(16, 16),
+		}),
+	})
+
+	local CloseButton = Create("TextButton", {
+		Name = "Close",
+		AnchorPoint = Vector2.new(1, 0.5),
+		BackgroundColor3 = Theme.Element,
+		BackgroundTransparency = 1,
+		Position = UDim2.new(1, -10, 0.5, 0),
+		Size = UDim2.fromOffset(24, 24),
+		AutoButtonColor = false,
+		Text = "",
+		Parent = TopBar,
+	}, {
+		Corner(7),
+	})
+
+	local CloseIcon = CreateIcon(GetIcon("x"), {
+		Name = "Icon",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		ImageColor3 = Theme.SubText,
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(16, 16),
+		Parent = CloseButton,
+	})
+
+	local Path = CreateLabel({
+		Name = "Path",
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 42, 0.5, 0),
+		Size = UDim2.new(1, -120, 0, 18),
+		FontFace = Fonts.SemiBold,
+		RichText = true,
+		Text = EscapeRichText(Title),
+		TextSize = 15,
+		Parent = TopBar,
+	})
+
+	local Holder = Create("Frame", {
+		Name = "Holder",
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(0, Layout.TopBarHeight),
+		Size = UDim2.new(1, 0, 1, -Layout.TopBarHeight),
+		ClipsDescendants = true,
+		Parent = Main,
+	})
+
+	local Cover = Create("Frame", {
+		Name = "Cover",
+		BackgroundColor3 = Theme.Surface,
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(2, 0),
+		Size = UDim2.new(1, -4, 1, -10),
+		ZIndex = 10,
+		Parent = Holder,
+	})
+
+	local Veil = Create("Frame", {
+		Name = "Veil",
+		BackgroundColor3 = Theme.Background,
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Size = UDim2.fromScale(1, 1),
+		ZIndex = 30,
+		Parent = Background,
+	}, {
+		Corner(12),
+	})
+
+	local Overlay = Create("Frame", {
+		Name = "Overlay",
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		ZIndex = 100,
+		Parent = ScreenGui,
+	})
+
+	local Dismiss = Create("TextButton", {
+		Name = "Dismiss",
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		AutoButtonColor = false,
+		Text = "",
+		Visible = false,
+		ZIndex = 0,
+		Parent = Overlay,
+	})
+
+	Dismiss.MouseButton1Down:Connect(ClosePopup)
+
+	local Tooltip = Create("TextLabel", {
+		Name = "Tooltip",
+		BackgroundColor3 = Theme.Element,
+		Size = UDim2.fromOffset(0, 24),
+		AutomaticSize = Enum.AutomaticSize.X,
+		FontFace = Fonts.Regular,
+		Text = "",
+		TextColor3 = Theme.Text,
+		TextSize = 13,
+		Visible = false,
+		Parent = Overlay,
+	}, {
+		Corner(6),
+		Stroke(Theme.StrokeLight, 1),
+		Create("UIPadding", {PaddingLeft = UDim.new(0, 9), PaddingRight = UDim.new(0, 9)}),
+	})
+
+	local OpenButton = Create("TextButton", {
+		Name = "Open",
+		AnchorPoint = Vector2.new(0.5, 0),
+		BackgroundColor3 = Theme.Background,
+		Position = UDim2.new(0.5, 0, 0, 12),
+		Size = UDim2.fromOffset(40, 40),
+		AutoButtonColor = false,
+		Text = "",
+		Visible = false,
+		Parent = ScreenGui,
+	}, {
+		Corner(12),
+		Stroke(Theme.StrokeLight, 1),
+		CreateIcon(LogoIcon or GetIcon("panel-left-open"), {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			ImageColor3 = (LogoIcon and not LogoIcon.Lucide) and Color3.fromRGB(255, 255, 255) or Theme.Accent,
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = (LogoIcon and not LogoIcon.Lucide) and UDim2.fromOffset(28, 28) or UDim2.fromOffset(20, 20),
+		}),
+	})
+
+	local Window = setmetatable({
+		Title = Title,
+		ScreenGui = ScreenGui,
+		Logo = LogoTile,
+		Veil = Veil,
+		IndicatorGlow = IndicatorGlow,
+		Root = Root,
+		Scale = RootScale,
+		Shadow = Shadow,
+		OpenButton = OpenButton,
+		HintShown = false,
+		TabList = TabList,
+		Indicator = Indicator,
+		Path = Path,
+		Holder = Holder,
+		Cover = Cover,
+		Overlay = Overlay,
+		Dismiss = Dismiss,
+		Tooltip = Tooltip,
+		Tabs = {},
+		ActiveTab = nil,
+		Visible = false,
+		ToggleKey = WindowOptions.ToggleKey == nil and Enum.KeyCode.RightShift or WindowOptions.ToggleKey,
+		GoalPosition = nil,
+	}, WindowClass)
+
+	local function ToGuiSpace(Position)
+		return Position - ScreenGui.AbsolutePosition
+	end
+
+	local function GetCenter()
+		return Root.AbsolutePosition + Root.AbsoluteSize / 2 - ScreenGui.AbsolutePosition
+	end
+
+	local function ClampCenter(Center)
+		local Bounds = ScreenGui.AbsoluteSize
+		local Half = Root.AbsoluteSize / 2 + Vector2.new(Layout.ShadowSpread, Layout.ShadowSpread)
+
+		return Vector2.new(
+			math.clamp(Center.X, Half.X, math.max(Half.X, Bounds.X - Half.X)),
+			math.clamp(Center.Y, Half.Y, math.max(Half.Y, Bounds.Y - Half.Y))
+		)
+	end
+
+	CloseButton.MouseEnter:Connect(function()
+		Tween(CloseButton, Animations.Fast, {BackgroundTransparency = 0})
+		Tween(CloseIcon, Animations.Fast, {ImageColor3 = Theme.Text})
+	end)
+
+	CloseButton.MouseLeave:Connect(function()
+		Tween(CloseButton, Animations.Fast, {BackgroundTransparency = 1})
+		Tween(CloseIcon, Animations.Fast, {ImageColor3 = Theme.SubText})
+	end)
+
+	CloseButton.MouseButton1Click:Connect(function()
+		Window:SetVisible(false)
+
+		if not Window.HintShown and Window.ToggleKey and not OpenButton.Visible then
+			Window.HintShown = true
+
+			Library:Notify({
+				Title = Title,
+				Content = "Press " .. GetKeyName(Window.ToggleKey) .. " to open the menu again.",
+				Icon = "keyboard",
+				Duration = 5,
+			})
+		end
+	end)
+
+	OpenButton.MouseButton1Click:Connect(function()
+		Window:SetVisible(true)
+	end)
+
+	TopBar.InputBegan:Connect(function(Input)
+		if not IsPressInput(Input) or ActiveDrag then return end
+		if IsPointInside(CloseButton, GetInputPosition(Input)) then return end
+
+		ClosePopup()
+
+		local StartCenter = GetCenter()
+		local GrabOffset = ToGuiSpace(GetInputPosition(Input)) - StartCenter
+
+		Root.Position = UDim2.fromOffset(StartCenter.X, StartCenter.Y)
+		Window.GoalPosition = StartCenter
+
+		BeginDrag(Input, {
+			Update = function(Position)
+				Window.GoalPosition = ClampCenter(ToGuiSpace(Position) - GrabOffset)
+			end,
+			Finish = function()
+				local Goal = Window.GoalPosition
+				if Goal then
+					Root.Position = UDim2.fromOffset(Goal.X, Goal.Y)
+					Window.GoalPosition = nil
+				end
+			end,
+		})
+	end)
+
+	Connect(RunService.RenderStepped, function(DeltaTime)
+		local Goal = Window.GoalPosition
+		if not Goal then return end
+
+		local Current = Vector2.new(Root.Position.X.Offset, Root.Position.Y.Offset)
+		local Next = Current:Lerp(Goal, 1 - math.exp(-DeltaTime * Layout.DragSpeed))
+
+		if (Goal - Next).Magnitude < 0.5 then
+			Next = Goal
+			Window.GoalPosition = nil
+		end
+
+		Root.Position = UDim2.fromOffset(Next.X, Next.Y)
+	end)
+
+	Connect(ScreenGui:GetPropertyChangedSignal("AbsoluteSize"), function()
+		if Root.Position.X.Scale ~= 0 then return end
+
+		local Current = Vector2.new(Root.Position.X.Offset, Root.Position.Y.Offset)
+		local Clamped = ClampCenter(Current)
+
+		if (Clamped - Current).Magnitude > 0.5 then
+			Root.Position = UDim2.fromOffset(Clamped.X, Clamped.Y)
+		end
+	end)
+
+	table.insert(Library.Windows, Window)
+	Window:SetVisible(true)
+
+	return Window
+end
+
+function WindowClass.SetVisible(Self, State)
+	if Self.Visible == State then return end
+
+	Self.Visible = State
+	ClosePopup()
+	Self.Tooltip.Visible = false
+
+	Self.OpenButton.Visible = not State and (UserInputService.TouchEnabled or not Self.ToggleKey)
+
+	Tween(Self.Shadow, State and Animations.Page or Animations.Exit, {
+		ImageTransparency = State and Layout.ShadowTransparency or 1,
+	})
+
+	if State then
+		Self.Root.Visible = true
+		Tween(Self.Scale, Animations.Dramatic, {Scale = 1})
+
+		Self.Logo.Rotation = -200
+		Tween(Self.Logo, Animations.Dramatic, {Rotation = 0})
+
+		Self.Veil.BackgroundTransparency = 0
+		Tween(Self.Veil, Animations.Page, {BackgroundTransparency = 1})
+
+		if Self.ActiveTab then
+			Self.ActiveTab:Reveal()
+		end
+	else
+		Tween(Self.Logo, Animations.Close, {Rotation = 200})
+		Tween(Self.Veil, Animations.Veil, {BackgroundTransparency = 0})
+
+		Tween(Self.Scale, Animations.Close, {Scale = 0.7}).Completed:Connect(function()
+			if not Self.Visible then
+				Self.Root.Visible = false
+			end
+		end)
+	end
+end
+
+function WindowClass.Toggle(Self)
+	Self:SetVisible(not Self.Visible)
+end
+
+function WindowClass.SetToggleKey(Self, Key)
+	Self.ToggleKey = Key
+end
+
+function WindowClass.SelectTab(Self, Tab)
+	if Self.ActiveTab == Tab then return end
+
+	ClosePopup()
+
+	local Previous = Self.ActiveTab
+
+	if Previous then
+		Previous.Page.Visible = false
+		Tween(Previous.Button, Animations.Smooth, {BackgroundTransparency = 1})
+		Tween(Previous.ButtonStroke, Animations.Smooth, {Transparency = 1})
+
+		if Previous.ButtonGlow then
+			Tween(Previous.ButtonGlow, Animations.Smooth, {Transparency = 1})
+		end
+		Tween(Previous.Icon, Animations.Smooth, {[Previous.ColorProperty] = Theme.SubText})
+	end
+
+	Self.ActiveTab = Tab
+
+	Tween(Tab.Button, Animations.Smooth, {BackgroundTransparency = 0})
+	Tween(Tab.ButtonStroke, Animations.Smooth, {Transparency = 0.55})
+
+	if Tab.ButtonGlow then
+		Tween(Tab.ButtonGlow, Animations.Smooth, {Transparency = 0.75})
+	end
+	Tween(Tab.Icon, Animations.Smooth, {[Tab.ColorProperty] = Theme.Accent})
+
+	local Step = Layout.TabButtonSize + Layout.TabButtonSpacing
+
+	if Self.IndicatorGlow then
+		Tween(Self.IndicatorGlow, Animations.Smooth, {Transparency = 0.5})
+	end
+
+	Tween(Self.Indicator, Animations.Spring, {
+		BackgroundTransparency = 0,
+		Position = UDim2.fromOffset(0, (Tab.Index - 1) * Step + 16),
+	})
+
+	Self.Path.Text = string.format(
+		"%s  <font color=\"%s\">/</font>  <font color=\"%s\">%s</font>",
+		EscapeRichText(Self.Title),
+		ToHex(Theme.SubText),
+		ToHex(Theme.Accent),
+		EscapeRichText(Tab.Name)
+	)
+
+	Tab.Page.Position = UDim2.fromOffset(0, 30)
+	Tab.Page.Visible = true
+	Tween(Tab.Page, Animations.Dramatic, {Position = UDim2.fromOffset(0, 0)})
+	Tab:Reveal()
+
+	Self.Cover.BackgroundTransparency = 0
+	Tween(Self.Cover, Animations.Page, {BackgroundTransparency = 1})
+end
+
+function WindowClass.AddTab(Self, TabOptions)
+	local Index = #Self.Tabs + 1
+	local Step = Layout.TabButtonSize + Layout.TabButtonSpacing
+
+	local Button = Create("TextButton", {
+		Name = TabOptions.Name .. "Button",
+		BackgroundColor3 = Theme.AccentDark,
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset((Layout.RailWidth - Layout.TabButtonSize) / 2, (Index - 1) * Step + 4),
+		Size = UDim2.fromOffset(Layout.TabButtonSize, Layout.TabButtonSize),
+		AutoButtonColor = false,
+		Text = "",
+		Parent = Self.TabList,
+	}, {
+		Corner(10),
+	})
+
+	local ButtonStroke = Stroke(Theme.Accent, 1)
+	ButtonStroke.Transparency = 1
+	ButtonStroke.Parent = Button
+
+	local ButtonGlow = CreateGlow(Button, 1, 8)
+
+	local Icon
+	local ColorProperty
+	local TabIcon = ResolveIcon(TabOptions.Icon, TabOptions.ImageRectOffset, TabOptions.ImageRectSize)
+
+	if TabIcon then
+		ColorProperty = "ImageColor3"
+
+		Icon = CreateIcon(TabIcon, {
+			Name = "Icon",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			ImageColor3 = Theme.SubText,
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromOffset(20, 20),
+			Parent = Button,
+		})
+	else
+		ColorProperty = "TextColor3"
+
+		Icon = Create("TextLabel", {
+			Name = "Icon",
+			BackgroundTransparency = 1,
+			Size = UDim2.fromScale(1, 1),
+			FontFace = Fonts.Bold,
+			Text = string.upper(string.sub(TabOptions.Name, 1, 1)),
+			TextColor3 = Theme.SubText,
+			TextSize = 16,
+			Parent = Button,
+		})
+	end
+
+	Self.TabList.CanvasSize = UDim2.fromOffset(0, Index * Step + 8)
+
+	local FinalPosition = Button.Position
+	local FadeProperty = ColorProperty == "ImageColor3" and "ImageTransparency" or "TextTransparency"
+	local EntranceInfo = TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out, 0, false, 0.1 + Index * 0.06)
+
+	Button.Position = UDim2.fromOffset(FinalPosition.X.Offset - 40, FinalPosition.Y.Offset)
+	Icon[FadeProperty] = 1
+	TweenService:Create(Button, EntranceInfo, {Position = FinalPosition}):Play()
+	TweenService:Create(Icon, EntranceInfo, {[FadeProperty] = 0}):Play()
+
+	local Page = Create("ScrollingFrame", {
+		Name = TabOptions.Name .. "Tab",
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Size = UDim2.fromScale(1, 1),
+		CanvasSize = UDim2.fromOffset(0, 0),
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		ScrollBarThickness = 2,
+		ScrollBarImageColor3 = Theme.StrokeLight,
+		ScrollingDirection = Enum.ScrollingDirection.Y,
+		Visible = false,
+		Parent = Self.Holder,
+	})
+
+	local Columns = {}
+
+	for ColumnIndex = 1, 2 do
+		Columns[ColumnIndex] = Create("Frame", {
+			Name = ColumnIndex == 1 and "LeftColumn" or "RightColumn",
+			BackgroundTransparency = 1,
+			Position = ColumnIndex == 1 and UDim2.fromOffset(10, 10) or UDim2.new(0.5, 5, 0, 10),
+			Size = UDim2.new(0.5, -15, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			Parent = Page,
+		}, {
+			Create("UIListLayout", {Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder}),
+			Create("UIPadding", {PaddingBottom = UDim.new(0, 10)}),
+		})
+	end
+
+	local Tab = setmetatable({
+		Name = TabOptions.Name,
+		Index = Index,
+		Window = Self,
+		Button = Button,
+		ButtonStroke = ButtonStroke,
+		ButtonGlow = ButtonGlow,
+		Icon = Icon,
+		ColorProperty = ColorProperty,
+		Page = Page,
+		Columns = Columns,
+		SectionCount = 0,
+		Sections = {},
+	}, TabClass)
+
+	table.insert(Self.Tabs, Tab)
+
+	Button.MouseButton1Click:Connect(function()
+		Self:SelectTab(Tab)
+	end)
+
+	Button.MouseEnter:Connect(function()
+		if ColorProperty == "ImageColor3" then
+			Tween(Icon, Animations.Spring, {Size = UDim2.fromOffset(25, 25)})
+		end
+
+		if Self.ActiveTab ~= Tab then
+			Tween(Icon, Animations.Fast, {[ColorProperty] = Theme.Text})
+		end
+
+		local Position = Button.AbsolutePosition
+		local Tooltip = Self.Tooltip
+
+		Tooltip.Text = TabOptions.Name
+		Tooltip.Position = UDim2.fromOffset(Position.X + Button.AbsoluteSize.X + 6, Position.Y + 8)
+		Tooltip.Visible = true
+		Tween(Tooltip, Animations.Smooth, {Position = UDim2.fromOffset(Position.X + Button.AbsoluteSize.X + 14, Position.Y + 8)})
+	end)
+
+	Button.MouseLeave:Connect(function()
+		if ColorProperty == "ImageColor3" then
+			Tween(Icon, Animations.Spring, {Size = UDim2.fromOffset(20, 20)})
+		end
+
+		if Self.ActiveTab ~= Tab then
+			Tween(Icon, Animations.Fast, {[ColorProperty] = Theme.SubText})
+		end
+
+		if Self.Tooltip.Text == TabOptions.Name then
+			Self.Tooltip.Visible = false
+		end
+	end)
+
+	if Index == 1 then
+		Self:SelectTab(Tab)
+	end
+
+	return Tab
+end
+
+local function RevealSection(Entry, Delay)
+	Entry.Frame.BackgroundTransparency = 1
+	Entry.Stroke.Color = Theme.Accent
+
+	TweenService:Create(Entry.Frame, TweenInfo.new(0.45, Enum.EasingStyle.Quint, Enum.EasingDirection.Out, 0, false, Delay), {
+		BackgroundTransparency = 0,
+	}):Play()
+
+	TweenService:Create(Entry.Stroke, TweenInfo.new(0.8,Enum.EasingStyle.Quint, Enum.EasingDirection.Out, 0, false, Delay), {
+		Color = Theme.Stroke,
+	}):Play()
+end
+
+function TabClass.Reveal(Self)
+	for Index, Entry in Self.Sections do
+		RevealSection(Entry, (Index - 1) * 0.05)
+	end
+end
+
+function TabClass.AddSection(Self, SectionOptions)
+	Self.SectionCount += 1
+
+	local ColumnIndex = (Self.SectionCount % 2 == 1) and 1 or 2
+
+	if SectionOptions.Side == "Left" then
+		ColumnIndex = 1
+	elseif SectionOptions.Side == "Right" then
+		ColumnIndex = 2
+	end
+
+	local SectionFrame = Create("Frame", {
+		Name = SectionOptions.Name,
+		BackgroundColor3 = Theme.Section,
+		BorderSizePixel = 0,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		LayoutOrder = Self.SectionCount,
+		Parent = Self.Columns[ColumnIndex],
+	}, {
+		Corner(10),
+		Stroke(Theme.Stroke, 1),
+		Create("UIListLayout", {SortOrder = Enum.SortOrder.LayoutOrder}),
+		Create("UIGradient", {
+			Rotation = 90,
+			Color = ColorSequence.new(Color3.fromRGB(255, 255, 255), Color3.fromRGB(205, 205, 212)),
+		}),
+	})
+
+	local Header = Create("Frame", {
+		Name = "TopBar",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 40),
+		LayoutOrder = 1,
+		Parent = SectionFrame,
+	})
+
+	local TitleInset = 12
+
+	local SectionIcon = nil
+
+	if SectionIcon then
+		TitleInset = 44
+
+		Create("Frame", {
+			Name = "IconTile",
+			AnchorPoint = Vector2.new(0, 0.5),
+			BackgroundColor3 = Theme.AccentDark,
+			Position = UDim2.new(0, 12, 0.5, 0),
+			Size = UDim2.fromOffset(24, 24),
+			Parent = Header,
+		}, {
+			Corner(7),
+			CreateIcon(SectionIcon, {
+				Name = "Icon",
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				ImageColor3 = Theme.Accent,
+				Position = UDim2.fromScale(0.5, 0.5),
+				Size = UDim2.fromOffset(14, 14),
+			}),
+		})
+	else
+		TitleInset = 14
+
+		Create("Frame", {
+			Name = "Accent",
+			Visible = false,
+			AnchorPoint = Vector2.new(0, 0.5),
+			BackgroundColor3 = Theme.Accent,
+			BorderSizePixel = 0,
+			Position = UDim2.new(0, 12, 0.5, 0),
+			Size = UDim2.fromOffset(3, 12),
+			Parent = Header,
+		}, {
+			Corner(1),
+		})
+	end
+
+	CreateLabel({
+		Name = "Title",
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, TitleInset, 0.5, 0),
+		Size = UDim2.new(1, -(TitleInset + 12), 0, 18),
+		FontFace = Fonts.SemiBold,
+		Text = SectionOptions.Name,
+		TextSize = 15,
+		Parent = Header,
+	})
+
+	Create("Frame", {
+		Name = "Line",
+		AnchorPoint = Vector2.new(0.5, 1),
+		BackgroundColor3 = Theme.Stroke,
+		BorderSizePixel = 0,
+		Position = UDim2.fromScale(0.5, 1),
+		Size = UDim2.new(1, -24, 0, 1),
+		Parent = Header,
+	})
+
+	local OptionsHolder = Create("Frame", {
+		Name = "OptionsHolder",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		LayoutOrder = 2,
+		Parent = SectionFrame,
+	}, {
+		Create("UIListLayout", {Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder}),
+		Create("UIPadding", {
+			PaddingTop = UDim.new(0, 8),
+			PaddingBottom = UDim.new(0, 10),
+			PaddingLeft = UDim.new(0, 12),
+			PaddingRight = UDim.new(0, 12),
+		}),
+	})
+
+	local Entry = {Frame = SectionFrame, Stroke = SectionFrame:FindFirstChildOfClass("UIStroke")}
+
+	table.insert(Self.Sections, Entry)
+	RevealSection(Entry, 0.15 + (#Self.Sections - 1) * 0.05)
+
+	return setmetatable({
+		Name = SectionOptions.Name,
+		Tab = Self,
+		Window = Self.Window,
+		Frame = SectionFrame,
+		Holder = OptionsHolder,
+		Order = 0,
+	}, SectionClass)
+end
+
+function SectionClass.AddLabel(Self, LabelOptions)
+	local Text = typeof(LabelOptions) == "table" and LabelOptions.Text or tostring(LabelOptions)
+	local Row = CreateRow(Self, "Label", 0)
+	Row.AutomaticSize = Enum.AutomaticSize.Y
+
+	local Label = CreateLabel({
+		Name = "Text",
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Text = Text,
+		TextColor3 = Theme.SubText,
+		TextSize = 13,
+		TextWrapped = true,
+		TextTruncate = Enum.TextTruncate.None,
+		Parent = Row,
+	})
+
+	local Object = {Type = "Label"}
+
+	function Object.Set(_, NewText)
+		Label.Text = NewText
+	end
+
+	return Object
+end
+
+function SectionClass.AddDivider(Self)
+	local Row = CreateRow(Self, "Divider", 9)
+
+	Create("Frame", {
+		Name = "Line",
+		AnchorPoint = Vector2.new(0, 0.5),
+		BackgroundColor3 = Theme.Stroke,
+		BorderSizePixel = 0,
+		Position = UDim2.fromScale(0, 0.5),
+		Size = UDim2.new(1, 0, 0, 1),
+		Parent = Row,
+	})
+end
+
+function SectionClass.AddToggle(Self, ToggleOptions)
+	local Flag = ToggleOptions.Flag or ToggleOptions.Name
+	local Value = ToggleOptions.Default == true
+	local Row = CreateRow(Self, ToggleOptions.Name)
+
+	local NameLabel = CreateLabel({
+		Name = "ToggleName",
+		Size = UDim2.new(1, -44, 1, 0),
+		Text = ToggleOptions.Name,
+		TextColor3 = Value and Theme.Text or Theme.SubText,
+		Parent = Row,
+	})
+
+	local Track = Create("Frame", {
+		Name = "Track",
+		AnchorPoint = Vector2.new(1, 0.5),
+		BackgroundColor3 = Value and Theme.AccentDark or Theme.Element,
+		Position = UDim2.fromScale(1, 0.5),
+		Size = UDim2.fromOffset(32, 18),
+		Parent = Row,
+	}, {
+		Corner(1),
+	})
+
+	local Knob = Create("Frame", {
+		Name = "Knob",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		BackgroundColor3 = Value and Theme.Accent or Theme.SubText,
+		Position = Value and UDim2.new(1, -9, 0.5, 0) or UDim2.new(0, 9, 0.5, 0),
+		Size = UDim2.fromOffset(12, 12),
+		Parent = Track,
+	}, {
+		Corner(1),
+	})
+
+	local ToggleGlow = CreateGlow(Track, Value and 0.2 or 1, 14)
+	local KnobGlow = CreateGlow(Knob, Value and 0.35 or 1, 8)
+	local Hitbox = CreateHitbox({Parent = Row})
+	local Object = {Type = "Toggle"}
+
+	Library.Flags[Flag] = Value
+
+	function Object.Set(_, NewValue, SkipCallback)
+		NewValue = NewValue == true
+		if NewValue == Value then return end
+
+		Value = NewValue
+		Library.Flags[Flag] = Value
+
+		Tween(Track, Animations.Smooth, {BackgroundColor3 = Value and Theme.AccentDark or Theme.Element})
+		Tween(NameLabel, Animations.Smooth, {TextColor3 = Value and Theme.Text or Theme.SubText})
+
+		if ToggleGlow then
+			Tween(ToggleGlow, Animations.Smooth, {Transparency = Value and 0.2 or 1})
+		end
+
+		if KnobGlow then
+			Tween(KnobGlow, Animations.Smooth, {Transparency = Value and 0.35 or 1})
+		end
+		Tween(Knob, Animations.Smooth, {
+			BackgroundColor3 = Value and Theme.Accent or Theme.SubText,
+			Position = Value and UDim2.new(1, -9, 0.5, 0) or UDim2.new(0, 9, 0.5, 0),
+		})
+
+		if not SkipCallback then
+			SafeCall(ToggleOptions.Callback, Value)
+		end
+	end
+
+	function Object.Get()
+		return Value
+	end
+
+	Hitbox.MouseButton1Down:Connect(function()
+		Tween(Knob, Animations.Fast, {Size = UDim2.fromOffset(21, 9)})
+	end)
+
+	Hitbox.MouseButton1Up:Connect(function()
+		Tween(Knob, Animations.Spring, {Size = UDim2.fromOffset(12, 12)})
+	end)
+
+	Hitbox.MouseLeave:Connect(function()
+		Tween(Knob, Animations.Spring, {Size = UDim2.fromOffset(12, 12)})
+	end)
+
+	Hitbox.MouseButton1Click:Connect(function()
+		Object:Set(not Value)
+	end)
+
+	return Object
+end
+
+function SectionClass.AddSlider(Self, SliderOptions)
+	local Flag = SliderOptions.Flag or SliderOptions.Name
+	local Minimum = SliderOptions.Min or 0
+	local Maximum = SliderOptions.Max or 100
+	local Rounding = SliderOptions.Rounding or 0
+	local Suffix = SliderOptions.Suffix or ""
+	local Value = math.clamp(RoundNumber(SliderOptions.Default or Minimum, Rounding), Minimum, Maximum)
+	local Page = Self.Tab.Page
+
+	local Row = CreateRow(Self, SliderOptions.Name, 42)
+
+	local function GetAlpha(Number)
+		if Maximum == Minimum then return 0 end
+		return math.clamp((Number - Minimum) / (Maximum - Minimum), 0, 1)
+	end
+
+	CreateLabel({
+		Name = "SliderName",
+		Size = UDim2.new(1, -80, 0, 24),
+		Text = SliderOptions.Name,
+		Parent = Row,
+	})
+
+	local ValueBox = Create("TextBox", {
+		Name = "SliderValue",
+		AnchorPoint = Vector2.new(1, 0),
+		BackgroundTransparency = 1,
+		Position = UDim2.fromScale(1, 0),
+		Size = UDim2.fromOffset(76, 24),
+		ClearTextOnFocus = false,
+		FontFace = Fonts.Regular,
+		Text = FormatNumber(Value, Rounding) .. Suffix,
+		TextColor3 = Theme.SubText,
+		TextSize = 14,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		ZIndex = 6,
+		Parent = Row,
+	})
+
+	local Track = Create("Frame", {
+		Name = "SliderLine",
+		BackgroundColor3 = Theme.Element,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(0, 31),
+		Size = UDim2.new(1, 0, 0, 4),
+		Parent = Row,
+	}, {
+		Corner(1),
+	})
+
+	local Fill = Create("Frame", {
+		Name = "SliderBar",
+		BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+		BorderSizePixel = 0,
+		Size = UDim2.fromScale(GetAlpha(Value), 1),
+		Parent = Track,
+	}, {
+		Corner(1),
+		Create("UIGradient", {
+			Color = ColorSequence.new(Theme.AccentDark, Theme.Accent),
+		}),
+	})
+
+	CreateGlow(Fill, 0.45, 8)
+
+	local Knob = Create("Frame", {
+		Name = "Box",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		BackgroundColor3 = Theme.Text,
+		Position = UDim2.fromScale(GetAlpha(Value), 0.5),
+		Size = UDim2.fromOffset(14, 8),
+		ZIndex = 2,
+		Parent = Track,
+	}, {
+		Corner(4),
+	})
+
+	local Hitbox = CreateHitbox({
+		Position = UDim2.fromOffset(0, 24),
+		Size = UDim2.new(1, 0, 0, 18),
+		Parent = Row,
+	})
+
+	local Object = {Type = "Slider"}
+
+	Library.Flags[Flag] = Value
+
+	function Object.Set(_, NewValue, SkipCallback, Instant)
+		NewValue = math.clamp(RoundNumber(NewValue, Rounding), Minimum, Maximum)
+
+		local Changed = NewValue ~= Value
+		local Alpha = GetAlpha(NewValue)
+
+		Value = NewValue
+		Library.Flags[Flag] = Value
+		ValueBox.Text = FormatNumber(Value, Rounding) .. Suffix
+
+		if Instant then
+			Knob.Position = UDim2.fromScale(Alpha, 0.5)
+			Fill.Size = UDim2.fromScale(Alpha, 1)
+		else
+			Tween(Knob, Animations.Fast, {Position = UDim2.fromScale(Alpha, 0.5)})
+			Tween(Fill, Animations.Fast, {Size = UDim2.fromScale(Alpha, 1)})
+		end
+
+		if Changed and not SkipCallback then
+			SafeCall(SliderOptions.Callback, Value)
+		end
+	end
+
+	function Object.Get()
+		return Value
+	end
+
+	Hitbox.InputBegan:Connect(function(Input)
+		if not IsPressInput(Input) or ActiveDrag then return end
+
+		ClosePopup()
+		Page.ScrollingEnabled = false
+		Tween(Knob, Animations.Fast, {Size = UDim2.fromOffset(24, 13), BackgroundColor3 = Theme.Accent})
+		Tween(ValueBox, Animations.Fast, {TextColor3 = Theme.Text})
+
+		local function Update(Position)
+			local Alpha = math.clamp((Position.X - Track.AbsolutePosition.X) / math.max(Track.AbsoluteSize.X, 1), 0, 1)
+			Object:Set(Minimum + (Maximum - Minimum) * Alpha)
+		end
+
+		BeginDrag(Input, {
+			Update = Update,
+			Finish = function()
+				Page.ScrollingEnabled = true
+				Tween(Knob, Animations.Spring, {Size = UDim2.fromOffset(14, 8), BackgroundColor3 = Theme.Text})
+				Tween(ValueBox, Animations.Smooth, {TextColor3 = Theme.SubText})
+			end,
+		})
+	end)
+
+	ValueBox.Focused:Connect(function()
+		ValueBox.Text = FormatNumber(Value, Rounding)
+		Tween(ValueBox, Animations.Fast, {TextColor3 = Theme.Text})
+	end)
+
+	ValueBox.FocusLost:Connect(function()
+		local Number = tonumber((string.gsub(ValueBox.Text, "[^%d%.%-]", "")))
+
+		Tween(ValueBox, Animations.Smooth, {TextColor3 = Theme.SubText})
+
+		if Number then
+			Object:Set(Number)
+		end
+
+		ValueBox.Text = FormatNumber(Value, Rounding) .. Suffix
+	end)
+
+	return Object
+end
+
+function SectionClass.AddDropdown(Self, DropdownOptions)
+	local Flag = DropdownOptions.Flag or DropdownOptions.Name
+	local Multi = DropdownOptions.Multi == true
+	local Options = table.clone(DropdownOptions.Options or {})
+	local Window = Self.Window
+	local Selected = {}
+	local Items = {}
+	local Open = false
+
+	local Row = CreateRow(Self, DropdownOptions.Name)
+
+	CreateLabel({
+		Name = "DropdownName",
+		Size = UDim2.new(1, -(Layout.DropdownWidth + 10), 1, 0),
+		Text = DropdownOptions.Name,
+		Parent = Row,
+	})
+
+	local Well = Create("Frame", {
+		Name = "DropdownHolder",
+		AnchorPoint = Vector2.new(1, 0.5),
+		BackgroundColor3 = Theme.Element,
+		Position = UDim2.fromScale(1, 0.5),
+		Size = UDim2.fromOffset(Layout.DropdownWidth, Layout.WellHeight),
+		Parent = Row,
+	}, {
+		Corner(6),
+		Stroke(Theme.StrokeLight, 1),
+	})
+
+	local Display = CreateLabel({
+		Name = "Display",
+		Position = UDim2.fromOffset(8, 0),
+		Size = UDim2.new(1, -30, 1, 0),
+		Text = "None",
+		TextColor3 = Theme.SubText,
+		TextSize = 13,
+		Parent = Well,
+	})
+
+	local Chevron = CreateIcon(GetIcon("chevron-down"), {
+		Name = "Chevron",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		ImageColor3 = Theme.SubText,
+		Position = UDim2.new(1, -13, 0.5, 0),
+		Size = UDim2.fromOffset(14, 14),
+		Parent = Well,
+	})
+
+	local WellHitbox = CreateHitbox({Parent = Well})
+	AddHover(WellHitbox, Well, Theme.Element, Theme.ElementHover)
+
+	local List = Create("Frame", {
+		Name = DropdownOptions.Name .. "List",
+		BackgroundColor3 = Theme.Element,
+		Size = UDim2.fromOffset(Layout.DropdownWidth, 0),
+		ClipsDescendants = true,
+		Visible = false,
+		Parent = Window.Overlay,
+	}, {
+		Corner(6),
+		Stroke(Theme.StrokeLight, 1),
+	})
+
+	local Scroller = Create("ScrollingFrame", {
+		Name = "Scroller",
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(0, 3),
+		Size = UDim2.new(1, 0, 1, -6),
+		CanvasSize = UDim2.fromOffset(0, 0),
+		ScrollBarThickness = 2,
+		ScrollBarImageColor3 = Theme.SubText,
+		ScrollingDirection = Enum.ScrollingDirection.Y,
+		Parent = List,
+	}, {
+		Create("UIListLayout", {SortOrder = Enum.SortOrder.LayoutOrder, HorizontalAlignment = Enum.HorizontalAlignment.Center}),
+	})
+
+	local Object = {Type = "Dropdown"}
+
+	local function GetListHeight()
+		return math.min(#Options, Layout.DropdownMaxItems) * Layout.DropdownItemHeight + 6
+	end
+
+	local function GetValue()
+		local Result = {}
+
+		for _, Option in Options do
+			if Selected[Option] then
+				table.insert(Result, Option)
+			end
+		end
+
+		if Multi then
+			return Result
+		end
+
+		return Result[1]
+	end
+
+	local function Refresh()
+		local Value = GetValue()
+		local HasValue = Multi and #Value > 0 or (not Multi and Value ~= nil)
+
+		Library.Flags[Flag] = Value
+		Display.Text = HasValue and (Multi and table.concat(Value, ", ") or tostring(Value)) or "None"
+		Tween(Display, Animations.Fast, {TextColor3 = HasValue and Theme.Text or Theme.SubText})
+
+		for Option, Item in Items do
+			local IsSelected = Selected[Option] == true
+
+			Tween(Item.Button, Animations.Fast, {TextColor3 = IsSelected and Theme.Text or Theme.SubText})
+			Tween(Item.Check, Animations.Fast, {ImageTransparency = IsSelected and 0 or 1})
+		end
+	end
+
+	local function SetOpen(State)
+		if Open == State then return end
+		Open = State
+
+		Tween(Chevron, Animations.Smooth, {
+			Rotation = State and 180 or 0,
+			ImageColor3 = State and Theme.Accent or Theme.SubText,
+		})
+
+		if State then
+			local Height = GetListHeight()
+
+			List.Size = UDim2.fromOffset(Layout.DropdownWidth, 0)
+			List.Visible = true
+			Tween(List, Animations.Spring, {Size = UDim2.fromOffset(Layout.DropdownWidth, Height)})
+
+			OpenPopup({
+				Frame = List,
+				Anchor = Well,
+				Dismiss = Window.Dismiss,
+				ClipFrame = Window.Holder,
+				Width = Layout.DropdownWidth,
+				Height = Height,
+				Close = function()
+					SetOpen(false)
+				end,
+			})
+		else
+			ReleasePopup(List)
+
+			Tween(List, Animations.Fast, {Size = UDim2.fromOffset(Layout.DropdownWidth, 0)}).Completed:Connect(function()
+				if not Open then
+					List.Visible = false
+				end
+			end)
+		end
+	end
+
+	local function BuildItems()
+		for _, Item in Items do
+			Item.Button:Destroy()
+		end
+
+		table.clear(Items)
+
+		for Index, Option in Options do
+			local Button = Create("TextButton", {
+				Name = tostring(Option),
+				BackgroundColor3 = Theme.AccentDark,
+				BackgroundTransparency = 1,
+				BorderSizePixel = 0,
+				Size = UDim2.new(1, -8, 0, Layout.DropdownItemHeight),
+				AutoButtonColor = false,
+				FontFace = Fonts.Regular,
+				Text = tostring(Option),
+				TextColor3 = Theme.SubText,
+				TextSize = 13,
+				TextTruncate = Enum.TextTruncate.AtEnd,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				LayoutOrder = Index,
+				Parent = Scroller,
+			}, {
+				Corner(6),
+				Create("UIPadding", {PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 26)}),
+			})
+
+			local Check = CreateIcon(GetIcon("check"), {
+				Name = "Check",
+				AnchorPoint = Vector2.new(1, 0.5),
+				ImageColor3 = Theme.Accent,
+				ImageTransparency = 1,
+				Position = UDim2.new(1, 18, 0.5, 0),
+				Size = UDim2.fromOffset(12, 12),
+				Parent = Button,
+			})
+
+			Items[Option] = {Button = Button, Check = Check}
+
+			Button.MouseEnter:Connect(function()
+				if not Selected[Option] then
+					Tween(Button, Animations.Fast, {TextColor3 = Theme.Text})
+				end
+			end)
+
+			Button.MouseLeave:Connect(function()
+				if not Selected[Option] then
+					Tween(Button, Animations.Fast, {TextColor3 = Theme.SubText})
+				end
+			end)
+
+			local LastChosen = 0
+
+			local function Choose()
+				if not Open or os.clock() - LastChosen < 0.25 then return end
+				LastChosen = os.clock()
+
+				if Multi then
+					Selected[Option] = not Selected[Option] or nil
+				else
+					table.clear(Selected)
+					Selected[Option] = true
+					SetOpen(false)
+				end
+
+				Refresh()
+				SafeCall(DropdownOptions.Callback, GetValue())
+			end
+
+			Button.InputBegan:Connect(function(Input)
+				if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+					Choose()
+				end
+			end)
+
+			Button.MouseButton1Click:Connect(Choose)
+		end
+
+		Scroller.CanvasSize = UDim2.fromOffset(0, #Options * Layout.DropdownItemHeight)
+	end
+
+	function Object.Set(_, NewValue, SkipCallback)
+		table.clear(Selected)
+
+		if typeof(NewValue) == "table" then
+			for _, Option in NewValue do
+				if table.find(Options, Option) then
+					Selected[Option] = true
+
+					if not Multi then break end
+				end
+			end
+		elseif NewValue ~= nil and table.find(Options, NewValue) then
+			Selected[NewValue] = true
+		end
+
+		Refresh()
+
+		if not SkipCallback then
+			SafeCall(DropdownOptions.Callback, GetValue())
+		end
+	end
+
+	function Object.Get()
+		return GetValue()
+	end
+
+	function Object.Refresh(_, NewOptions, KeepSelection)
+		SetOpen(false)
+		Options = table.clone(NewOptions)
+
+		if KeepSelection then
+			for Option in Selected do
+				if not table.find(Options, Option) then
+					Selected[Option] = nil
+				end
+			end
+		else
+			table.clear(Selected)
+		end
+
+		BuildItems()
+		Refresh()
+	end
+
+	WellHitbox.MouseButton1Click:Connect(function()
+		if #Options == 0 then return end
+		SetOpen(not Open)
+	end)
+
+	BuildItems()
+	Object:Set(DropdownOptions.Default, true)
+
+	return Object
+end
+
+function SectionClass.AddKeybind(Self, KeybindOptions)
+	local Flag = KeybindOptions.Flag or KeybindOptions.Name
+	local Row = CreateRow(Self, KeybindOptions.Name)
+
+	CreateLabel({
+		Name = "KeybindName",
+		Size = UDim2.new(1, -90, 1, 0),
+		Text = KeybindOptions.Name,
+		Parent = Row,
+	})
+
+	local Button = Create("TextButton", {
+		Name = "KeybindSelector",
+		AnchorPoint = Vector2.new(1, 0.5),
+		BackgroundColor3 = Theme.Element,
+		Position = UDim2.fromScale(1, 0.5),
+		Size = UDim2.fromOffset(0, Layout.WellHeight),
+		AutomaticSize = Enum.AutomaticSize.X,
+		AutoButtonColor = false,
+		FontFace = Fonts.Regular,
+		Text = GetKeyName(KeybindOptions.Default),
+		TextColor3 = Theme.SubText,
+		TextSize = 13,
+		Parent = Row,
+	}, {
+		Corner(6),
+		Create("UIPadding", {PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10)}),
+		Create("UISizeConstraint", {MinSize = Vector2.new(36, Layout.WellHeight)}),
+	})
+
+	local ButtonStroke = Stroke(Theme.StrokeLight, 1)
+	ButtonStroke.Parent = Button
+
+	AddHover(Button, Button, Theme.Element, Theme.ElementHover)
+
+	local Object = {
+		Type = "Keybind",
+		Value = KeybindOptions.Default,
+		Pressed = KeybindOptions.Pressed,
+	}
+
+	Library.Flags[Flag] = Object.Value
+	table.insert(Library.Keybinds, Object)
+
+	function Object.Set(_, NewKey, SkipCallback)
+		Object.Value = NewKey
+		Library.Flags[Flag] = NewKey
+		Button.Text = GetKeyName(NewKey)
+
+		if not SkipCallback then
+			SafeCall(KeybindOptions.Callback, NewKey)
+		end
+	end
+
+	function Object.Get()
+		return Object.Value
+	end
+
+	Button.MouseButton1Click:Connect(function()
+		if Library.Binding then return end
+
+		Library.Binding = true
+		Button.Text = "..."
+		Tween(Button, Animations.Fast, {TextColor3 = Theme.Accent})
+		Tween(ButtonStroke, Animations.Fast, {Color = Theme.Accent})
+
+		local Connection
+
+		Connection = UserInputService.InputBegan:Connect(function(Input)
+			local NewKey
+
+			if Input.KeyCode ~= Enum.KeyCode.Unknown then
+				if Input.KeyCode ~= Enum.KeyCode.Escape and Input.KeyCode ~= Enum.KeyCode.Backspace then
+					NewKey = Input.KeyCode
+				end
+			elseif Input.UserInputType == Enum.UserInputType.MouseButton2 or Input.UserInputType == Enum.UserInputType.MouseButton3 then
+				NewKey = Input.UserInputType
+			else
+				return
+			end
+
+			Connection:Disconnect()
+
+			Tween(Button, Animations.Smooth, {TextColor3 = Theme.SubText})
+			Tween(ButtonStroke, Animations.Smooth, {Color = Theme.StrokeLight})
+			Object:Set(NewKey)
+
+			task.defer(function()
+				Library.Binding = false
+			end)
+		end)
+	end)
+
+	return Object
+end
+
+function SectionClass.AddTextBox(Self, TextBoxOptions)
+	local Flag = TextBoxOptions.Flag or TextBoxOptions.Name
+	local Row = CreateRow(Self, TextBoxOptions.Name)
+
+	CreateLabel({
+		Name = "TextBoxName",
+		Size = UDim2.new(1, -(Layout.DropdownWidth + 10), 1, 0),
+		Text = TextBoxOptions.Name,
+		Parent = Row,
+	})
+
+	local Well = Create("Frame", {
+		Name = "Background",
+		AnchorPoint = Vector2.new(1, 0.5),
+		BackgroundColor3 = Theme.Element,
+		Position = UDim2.fromScale(1, 0.5),
+		Size = UDim2.fromOffset(Layout.DropdownWidth, Layout.WellHeight),
+		ClipsDescendants = true,
+		Parent = Row,
+	}, {
+		Corner(6),
+	})
+
+	local WellStroke = Stroke(Theme.StrokeLight, 1)
+	WellStroke.Parent = Well
+
+	local Input = Create("TextBox", {
+		Name = "TextInput",
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(8, 0),
+		Size = UDim2.new(1, -16, 1, 0),
+		ClearTextOnFocus = false,
+		FontFace = Fonts.Regular,
+		PlaceholderColor3 = Theme.SubText,
+		PlaceholderText = TextBoxOptions.Placeholder or "...",
+		Text = TextBoxOptions.Default or "",
+		TextColor3 = Theme.Text,
+		TextSize = 13,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Parent = Well,
+	})
+
+	local Object = {Type = "TextBox"}
+
+	Library.Flags[Flag] = Input.Text
+
+	function Object.Set(_, NewText, SkipCallback)
+		Input.Text = tostring(NewText)
+		Library.Flags[Flag] = Input.Text
+
+		if not SkipCallback then
+			SafeCall(TextBoxOptions.Callback, Input.Text, false)
+		end
+	end
+
+	function Object.Get()
+		return Input.Text
+	end
+
+	Input.Focused:Connect(function()
+		Tween(WellStroke, Animations.Fast, {Color = Theme.Accent})
+		Tween(Well, Animations.Fast, {BackgroundColor3 = Theme.ElementHover})
+	end)
+
+	Input.FocusLost:Connect(function(EnterPressed)
+		Tween(WellStroke, Animations.Smooth, {Color = Theme.StrokeLight})
+		Tween(Well, Animations.Smooth, {BackgroundColor3 = Theme.Element})
+
+		Library.Flags[Flag] = Input.Text
+		SafeCall(TextBoxOptions.Callback, Input.Text, EnterPressed)
+	end)
+
+	return Object
+end
+
+function SectionClass.AddButton(Self, ButtonOptions)
+	local Row = CreateRow(Self, ButtonOptions.Name)
+	local Compact = ButtonOptions.ButtonText ~= nil
+
+	if Compact then
+		CreateLabel({
+			Name = "ButtonName",
+			Size = UDim2.new(1, -106, 1, 0),
+			Text = ButtonOptions.Name,
+			Parent = Row,
+		})
+	end
+
+	local Button = Create("TextButton", {
+		Name = "Button",
+		AnchorPoint = Vector2.new(1, 0.5),
+		BackgroundColor3 = Theme.Element,
+		Position = UDim2.fromScale(1, 0.5),
+		Size = Compact and UDim2.fromOffset(96, Layout.WellHeight) or UDim2.new(1, 0, 0, 26),
+		AutoButtonColor = false,
+		FontFace = Fonts.Regular,
+		Text = Compact and ButtonOptions.ButtonText or ButtonOptions.Name,
+		TextColor3 = Compact and Theme.SubText or Theme.Text,
+		TextSize = 13,
+		Parent = Row,
+	}, {
+		Corner(6),
+		Stroke(Theme.StrokeLight, 1),
+	})
+
+	local ButtonIcon = ResolveIcon(ButtonOptions.Icon, ButtonOptions.ImageRectOffset, ButtonOptions.ImageRectSize)
+
+	if ButtonIcon then
+		CreateIcon(ButtonIcon, {
+			Name = "Icon",
+			AnchorPoint = Vector2.new(0, 0.5),
+			ImageColor3 = Theme.SubText,
+			Position = UDim2.new(0, 8, 0.5, 0),
+			Size = UDim2.fromOffset(14, 14),
+			Parent = Button,
+		})
+	end
+
+	local RestColor = Button.TextColor3
+
+	AddHover(Button, Button, Theme.Element, Theme.ElementHover)
+
+	Button.MouseButton1Click:Connect(function()
+		Button.BackgroundColor3 = Theme.AccentDark
+		Button.TextColor3 = Theme.Accent
+		Tween(Button, Animations.Page, {BackgroundColor3 = Theme.ElementHover, TextColor3 = RestColor})
+
+		SafeCall(ButtonOptions.Callback)
+	end)
+
+	return {Type = "Button"}
+end
+
+function SectionClass.AddColorPicker(Self, ColorPickerOptions)
+	local Flag = ColorPickerOptions.Flag or ColorPickerOptions.Name
+	local Window = Self.Window
+	local Value = ColorPickerOptions.Default or Theme.Accent
+	local Hue, Saturation, Brightness = Value:ToHSV()
+	local Open = false
+	local PopupSize = Vector2.new(196, 176)
+
+	local Row = CreateRow(Self, ColorPickerOptions.Name)
+
+	CreateLabel({
+		Name = "ColorPickerName",
+		Size = UDim2.new(1, -44, 1, 0),
+		Text = ColorPickerOptions.Name,
+		Parent = Row,
+	})
+
+	local Swatch = Create("TextButton", {
+		Name = "Swatch",
+		AnchorPoint = Vector2.new(1, 0.5),
+		BackgroundColor3 = Value,
+		Position = UDim2.fromScale(1, 0.5),
+		Size = UDim2.fromOffset(36, 20),
+		AutoButtonColor = false,
+		Text = "",
+		Parent = Row,
+	}, {
+		Corner(6),
+		Stroke(Theme.StrokeLight, 1),
+	})
+
+	local Popup = Create("Frame", {
+		Name = ColorPickerOptions.Name .. "Picker",
+		BackgroundColor3 = Theme.Section,
+		Size = UDim2.fromOffset(PopupSize.X, 0),
+		ClipsDescendants = true,
+		Visible = false,
+		Parent = Window.Overlay,
+	}, {
+		Corner(8),
+		Stroke(Theme.StrokeLight, 1),
+	})
+
+	local Field = Create("TextButton", {
+		Name = "Field",
+		BackgroundColor3 = Color3.fromHSV(Hue, 1, 1),
+		Position = UDim2.fromOffset(10, 10),
+		Size = UDim2.fromOffset(176, 110),
+		AutoButtonColor = false,
+		Text = "",
+		Parent = Popup,
+	}, {
+		Corner(6),
+		Create("Frame", {
+			Name = "White",
+			BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+			BorderSizePixel = 0,
+			Size = UDim2.fromScale(1, 1),
+		}, {
+			Corner(6),
+			Create("UIGradient", {Transparency = NumberSequence.new(0, 1)}),
+		}),
+		Create("Frame", {
+			Name = "Black",
+			BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+			BorderSizePixel = 0,
+			Size = UDim2.fromScale(1, 1),
+			ZIndex = 2,
+		}, {
+			Corner(6),
+			Create("UIGradient", {Rotation = 90, Transparency = NumberSequence.new(1, 0)}),
+		}),
+	})
+
+	local FieldCursor = Create("Frame", {
+		Name = "Cursor",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		BackgroundTransparency = 1,
+		Position = UDim2.fromScale(Saturation, 1 - Brightness),
+		Size = UDim2.fromOffset(10, 10),
+		ZIndex = 3,
+		Parent = Field,
+	}, {
+		Corner(1),
+		Stroke(Color3.fromRGB(255, 255, 255), 1.5),
+	})
+
+	local HueKeypoints = {}
+
+	for Index = 0, 6 do
+		table.insert(HueKeypoints, ColorSequenceKeypoint.new(Index / 6, Color3.fromHSV(Index / 6, 1, 1)))
+	end
+
+	local HueBar = Create("TextButton", {
+		Name = "Hue",
+		BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+		Position = UDim2.fromOffset(10, 129),
+		Size = UDim2.fromOffset(176, 8),
+		AutoButtonColor = false,
+		Text = "",
+		Parent = Popup,
+	}, {
+		Corner(1),
+		Create("UIGradient", {Color = ColorSequence.new(HueKeypoints)}),
+	})
+
+	local HueCursor = Create("Frame", {
+		Name = "Cursor",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+		Position = UDim2.fromScale(Hue, 0.5),
+		Size = UDim2.fromOffset(4, 14),
+		ZIndex = 2,
+		Parent = HueBar,
+	}, {
+		Corner(1),
+		Stroke(Theme.Section, 1.5),
+	})
+
+	local HexBox = Create("TextBox", {
+		Name = "Hex",
+		BackgroundColor3 = Theme.Element,
+		Position = UDim2.fromOffset(10, 146),
+		Size = UDim2.fromOffset(176, 20),
+		ClearTextOnFocus = false,
+		FontFace = Fonts.Regular,
+		Text = ToHex(Value),
+		TextColor3 = Theme.SubText,
+		TextSize = 13,
+		Parent = Popup,
+	}, {
+		Corner(5),
+	})
+
+	local Object = {Type = "ColorPicker"}
+
+	Library.Flags[Flag] = Value
+
+	local function Apply(SkipCallback)
+		Value = Color3.fromHSV(Hue, Saturation, Brightness)
+		Library.Flags[Flag] = Value
+
+		Swatch.BackgroundColor3 = Value
+		Field.BackgroundColor3 = Color3.fromHSV(Hue, 1, 1)
+		FieldCursor.Position = UDim2.fromScale(Saturation, 1 - Brightness)
+		HueCursor.Position = UDim2.fromScale(Hue, 0.5)
+		HexBox.Text = ToHex(Value)
+
+		if not SkipCallback then
+			SafeCall(ColorPickerOptions.Callback, Value)
+		end
+	end
+
+	local function SetOpen(State)
+		if Open == State then return end
+		Open = State
+
+		if State then
+			Popup.Size = UDim2.fromOffset(PopupSize.X, 0)
+			Popup.Visible = true
+			Tween(Popup, Animations.Spring, {Size = UDim2.fromOffset(PopupSize.X, PopupSize.Y)})
+
+			OpenPopup({
+				Frame = Popup,
+				Anchor = Swatch,
+				Dismiss = Window.Dismiss,
+				ClipFrame = Window.Holder,
+				Width = PopupSize.X,
+				Height = PopupSize.Y,
+				Close = function()
+					SetOpen(false)
+				end,
+			})
+		else
+			ReleasePopup(Popup)
+
+			Tween(Popup, Animations.Fast, {Size = UDim2.fromOffset(PopupSize.X, 0)}).Completed:Connect(function()
+				if not Open then
+					Popup.Visible = false
+				end
+			end)
+		end
+	end
+
+	function Object.Set(_, NewColor, SkipCallback)
+		Hue, Saturation, Brightness = NewColor:ToHSV()
+		Apply(SkipCallback)
+	end
+
+	function Object.Get()
+		return Value
+	end
+
+	Swatch.InputBegan:Connect(function(Input)
+		if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+			CalibrateMouse(Swatch, Window.ScreenGui)
+		end
+	end)
+
+	Swatch.MouseButton1Click:Connect(function()
+		SetOpen(not Open)
+	end)
+
+	Field.InputBegan:Connect(function(Input)
+		if not IsPressInput(Input) or ActiveDrag then return end
+
+		if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+			CalibrateMouse(Field, Window.ScreenGui)
+		end
+
+		local function Update(Position)
+			local Size = Field.AbsoluteSize
+			local Relative = Position - Field.AbsolutePosition
+
+			Saturation = math.clamp(Relative.X / math.max(Size.X, 1), 0, 1)
+			Brightness = 1 - math.clamp(Relative.Y / math.max(Size.Y, 1), 0, 1)
+			Apply()
+		end
+
+		BeginDrag(Input, {Update = Update})
+	end)
+
+	HueBar.InputBegan:Connect(function(Input)
+		if not IsPressInput(Input) or ActiveDrag then return end
+
+		if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+			CalibrateMouse(HueBar, Window.ScreenGui)
+		end
+
+		local function Update(Position)
+			Hue = math.clamp((Position.X - HueBar.AbsolutePosition.X) / math.max(HueBar.AbsoluteSize.X, 1), 0, 1)
+			Apply()
+		end
+
+		BeginDrag(Input, {Update = Update})
+	end)
+
+	HexBox.FocusLost:Connect(function()
+		local NewColor = FromHex(HexBox.Text)
+
+		if NewColor then
+			Object:Set(NewColor)
+		else
+			HexBox.Text = ToHex(Value)
+		end
+	end)
+
+	return Object
+end
+
+
+return Library
