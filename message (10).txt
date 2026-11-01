@@ -65,8 +65,8 @@ local Animations = {
 }
 
 local Layout = {
-	WindowSize = Vector2.new(712, 550),
-	RailWidth = 60,
+	WindowSize = Vector2.new(800, 550),
+	RailWidth = 168,
 	TopBarHeight = 42,
 	RowHeight = 30,
 	WellHeight = 22,
@@ -804,10 +804,9 @@ function Library.CreateWindow(_, WindowOptions)
 
 	local LogoTile = Create("TextLabel", {
 		Name = "Logo",
-		AnchorPoint = Vector2.new(0.5, 0),
 		BackgroundColor3 = Theme.AccentDark,
 		BackgroundTransparency = (LogoIcon and not LogoIcon.Lucide) and 1 or 0,
-		Position = UDim2.new(0.5, 0, 0, 15),
+		Position = UDim2.fromOffset(16, 15),
 		Size = UDim2.fromOffset(30, 30),
 		FontFace = Fonts.Bold,
 		Text = LogoIcon and "" or string.upper(string.sub(Title, 1, 1)),
@@ -829,13 +828,26 @@ function Library.CreateWindow(_, WindowOptions)
 		})
 	end
 
+	Create("TextLabel", {
+		Name = "Title",
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(54, 15),
+		Size = UDim2.new(1, -62, 0, 30),
+		FontFace = Fonts.Bold,
+		Text = Title,
+		TextColor3 = Theme.Text,
+		TextSize = 16,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Parent = LeftBar,
+	})
+
 	Create("Frame", {
 		Name = "Separator",
-		AnchorPoint = Vector2.new(0.5, 0),
 		BackgroundColor3 = Theme.StrokeLight,
 		BorderSizePixel = 0,
-		Position = UDim2.new(0.5, 0, 0, 58),
-		Size = UDim2.fromOffset(22, 1),
+		Position = UDim2.fromOffset(14, 58),
+		Size = UDim2.new(1, -28, 0, 1),
 		Parent = LeftBar,
 	})
 
@@ -846,36 +858,40 @@ function Library.CreateWindow(_, WindowOptions)
 		Position = UDim2.fromOffset(0, 72),
 		Size = UDim2.new(1, 0, 1, -130),
 		CanvasSize = UDim2.fromOffset(0, 0),
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
 		ScrollBarThickness = 0,
 		ScrollingDirection = Enum.ScrollingDirection.Y,
 		Parent = LeftBar,
-	})
-
-	local Indicator = Create("Frame", {
-		Name = "Indicator",
-		BackgroundColor3 = Theme.Accent,
-		BackgroundTransparency = 1,
-		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(0, 16),
-		Size = UDim2.fromOffset(3, 16),
-		ZIndex = 3,
-		Parent = TabList,
 	}, {
-		Corner(1),
+		Create("UIListLayout", {Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder}),
+		Create("UIPadding", {PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 8), PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8)}),
 	})
-
-	local IndicatorGlow = CreateGlow(Indicator, 1, 8)
 
 	local Avatar = Create("ImageLabel", {
 		Name = "Avatar",
-		AnchorPoint = Vector2.new(0.5, 1),
+		AnchorPoint = Vector2.new(0, 1),
 		BackgroundColor3 = Theme.Element,
-		Position = UDim2.new(0.5, 0, 1, -16),
+		Position = UDim2.new(0, 16, 1, -16),
 		Size = UDim2.fromOffset(30, 30),
 		Parent = LeftBar,
 	}, {
 		Corner(1),
 		Stroke(Theme.StrokeLight, 1),
+	})
+
+	Create("TextLabel", {
+		Name = "PlayerName",
+		AnchorPoint = Vector2.new(0, 1),
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 54, 1, -16),
+		Size = UDim2.new(1, -62, 0, 30),
+		FontFace = Fonts.Regular,
+		Text = LocalPlayer.DisplayName,
+		TextColor3 = Theme.SubText,
+		TextSize = 13,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Parent = LeftBar,
 	})
 
 	if LocalPlayer.UserId > 0 then
@@ -1089,14 +1105,12 @@ function Library.CreateWindow(_, WindowOptions)
 		ScreenGui = ScreenGui,
 		Logo = LogoTile,
 		Veil = Veil,
-		IndicatorGlow = IndicatorGlow,
 		Root = Root,
 		Scale = RootScale,
 		Shadow = Shadow,
 		OpenButton = OpenButton,
 		HintShown = false,
 		TabList = TabList,
-		Indicator = Indicator,
 		Path = Path,
 		Holder = Holder,
 		Cover = Cover,
@@ -1104,6 +1118,7 @@ function Library.CreateWindow(_, WindowOptions)
 		Dismiss = Dismiss,
 		Tooltip = Tooltip,
 		Tabs = {},
+		Categories = {},
 		ActiveTab = nil,
 		Visible = false,
 		ToggleKey = WindowOptions.ToggleKey == nil and Enum.KeyCode.RightShift or WindowOptions.ToggleKey,
@@ -1277,6 +1292,8 @@ function WindowClass.SelectTab(Self, Tab)
 			Tween(Previous.ButtonGlow, Animations.Smooth, {Transparency = 1})
 		end
 		Tween(Previous.Icon, Animations.Smooth, {[Previous.ColorProperty] = Theme.SubText})
+		Tween(Previous.Label, Animations.Smooth, {TextColor3 = Theme.SubText})
+		Tween(Previous.Bar, Animations.Smooth, {BackgroundTransparency = 1, Size = UDim2.fromOffset(3, 0)})
 	end
 
 	Self.ActiveTab = Tab
@@ -1288,17 +1305,8 @@ function WindowClass.SelectTab(Self, Tab)
 		Tween(Tab.ButtonGlow, Animations.Smooth, {Transparency = 0.75})
 	end
 	Tween(Tab.Icon, Animations.Smooth, {[Tab.ColorProperty] = Theme.Accent})
-
-	local Step = Layout.TabButtonSize + Layout.TabButtonSpacing
-
-	if Self.IndicatorGlow then
-		Tween(Self.IndicatorGlow, Animations.Smooth, {Transparency = 0.5})
-	end
-
-	Tween(Self.Indicator, Animations.Spring, {
-		BackgroundTransparency = 0,
-		Position = UDim2.fromOffset(0, (Tab.Index - 1) * Step + 16),
-	})
+	Tween(Tab.Label, Animations.Smooth, {TextColor3 = Theme.Text})
+	Tween(Tab.Bar, Animations.Spring, {BackgroundTransparency = 0, Size = UDim2.fromOffset(3, 16)})
 
 	Self.Path.Text = string.format(
 		"%s  <font color=\"%s\">/</font>  <font color=\"%s\">%s</font>",
@@ -1317,21 +1325,99 @@ function WindowClass.SelectTab(Self, Tab)
 	Tween(Self.Cover, Animations.Page, {BackgroundTransparency = 1})
 end
 
-function WindowClass.AddTab(Self, TabOptions)
+function WindowClass.AddCategory(Self, CategoryOptions)
+	if type(CategoryOptions) == "string" then
+		CategoryOptions = {Name = CategoryOptions}
+	end
+
+	local Order = #Self.Categories + 1
+
+	local Header = Create("TextButton", {
+		Name = CategoryOptions.Name .. "Category",
+		BackgroundTransparency = 1,
+		LayoutOrder = Order * 1000,
+		Size = UDim2.new(1, 0, 0, 28),
+		AutoButtonColor = false,
+		Text = "",
+		Parent = Self.TabList,
+	})
+
+	local Label = Create("TextLabel", {
+		Name = "Label",
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(8, 0),
+		Size = UDim2.new(1, -36, 1, 0),
+		FontFace = Fonts.SemiBold,
+		Text = CategoryOptions.Name,
+		TextColor3 = Theme.SubText,
+		TextSize = 13,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Parent = Header,
+	})
+
+	local Chevron = CreateIcon(GetIcon("chevron-down"), {
+		Name = "Chevron",
+		AnchorPoint = Vector2.new(1, 0.5),
+		ImageColor3 = Theme.SubText,
+		Position = UDim2.new(1, -8, 0.5, 0),
+		Size = UDim2.fromOffset(14, 14),
+		Parent = Header,
+	})
+
+	local Category = {
+		Name = CategoryOptions.Name,
+		Order = Order,
+		Tabs = {},
+		Collapsed = false,
+	}
+
+	function Category.AddTab(_, TabOptions)
+		return WindowClass.AddTab(Self, TabOptions, Category)
+	end
+
+	function Category.SetCollapsed(_, State)
+		Category.Collapsed = State
+		Tween(Chevron, Animations.Smooth, {Rotation = State and -90 or 0})
+
+		for _, Tab in Category.Tabs do
+			Tab.Button.Visible = not State
+		end
+	end
+
+	Header.MouseButton1Click:Connect(function()
+		Category:SetCollapsed(not Category.Collapsed)
+	end)
+
+	Header.MouseEnter:Connect(function()
+		Tween(Label, Animations.Fast, {TextColor3 = Theme.Text})
+		Tween(Chevron, Animations.Fast, {ImageColor3 = Theme.Text})
+	end)
+
+	Header.MouseLeave:Connect(function()
+		Tween(Label, Animations.Fast, {TextColor3 = Theme.SubText})
+		Tween(Chevron, Animations.Fast, {ImageColor3 = Theme.SubText})
+	end)
+
+	table.insert(Self.Categories, Category)
+
+	return Category
+end
+
+function WindowClass.AddTab(Self, TabOptions, Category)
 	local Index = #Self.Tabs + 1
-	local Step = Layout.TabButtonSize + Layout.TabButtonSpacing
+	local Order = Category and (Category.Order * 1000 + #Category.Tabs + 1) or Index
 
 	local Button = Create("TextButton", {
 		Name = TabOptions.Name .. "Button",
 		BackgroundColor3 = Theme.AccentDark,
 		BackgroundTransparency = 1,
-		Position = UDim2.fromOffset((Layout.RailWidth - Layout.TabButtonSize) / 2, (Index - 1) * Step + 4),
-		Size = UDim2.fromOffset(Layout.TabButtonSize, Layout.TabButtonSize),
+		LayoutOrder = Order,
+		Size = UDim2.new(1, 0, 0, 34),
 		AutoButtonColor = false,
 		Text = "",
 		Parent = Self.TabList,
 	}, {
-		Corner(10),
+		Corner(8),
 	})
 
 	local ButtonStroke = Stroke(Theme.Accent, 1)
@@ -1339,6 +1425,19 @@ function WindowClass.AddTab(Self, TabOptions)
 	ButtonStroke.Parent = Button
 
 	local ButtonGlow = CreateGlow(Button, 1, 8)
+
+	local Bar = Create("Frame", {
+		Name = "Bar",
+		AnchorPoint = Vector2.new(0, 0.5),
+		BackgroundColor3 = Theme.Accent,
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Position = UDim2.new(0, 3, 0.5, 0),
+		Size = UDim2.fromOffset(3, 0),
+		Parent = Button,
+	}, {
+		Corner(1),
+	})
 
 	local Icon
 	local ColorProperty
@@ -1349,10 +1448,10 @@ function WindowClass.AddTab(Self, TabOptions)
 
 		Icon = CreateIcon(TabIcon, {
 			Name = "Icon",
-			AnchorPoint = Vector2.new(0.5, 0.5),
+			AnchorPoint = Vector2.new(0, 0.5),
 			ImageColor3 = Theme.SubText,
-			Position = UDim2.fromScale(0.5, 0.5),
-			Size = UDim2.fromOffset(20, 20),
+			Position = UDim2.new(0, 14, 0.5, 0),
+			Size = UDim2.fromOffset(18, 18),
 			Parent = Button,
 		})
 	else
@@ -1360,26 +1459,39 @@ function WindowClass.AddTab(Self, TabOptions)
 
 		Icon = Create("TextLabel", {
 			Name = "Icon",
+			AnchorPoint = Vector2.new(0, 0.5),
 			BackgroundTransparency = 1,
-			Size = UDim2.fromScale(1, 1),
+			Position = UDim2.new(0, 14, 0.5, 0),
+			Size = UDim2.fromOffset(18, 18),
 			FontFace = Fonts.Bold,
 			Text = string.upper(string.sub(TabOptions.Name, 1, 1)),
 			TextColor3 = Theme.SubText,
-			TextSize = 16,
+			TextSize = 15,
 			Parent = Button,
 		})
 	end
 
-	Self.TabList.CanvasSize = UDim2.fromOffset(0, Index * Step + 8)
+	local Label = Create("TextLabel", {
+		Name = "Label",
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(42, 0),
+		Size = UDim2.new(1, -50, 1, 0),
+		FontFace = Fonts.SemiBold,
+		Text = TabOptions.Name,
+		TextColor3 = Theme.SubText,
+		TextSize = 14,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Parent = Button,
+	})
 
-	local FinalPosition = Button.Position
 	local FadeProperty = ColorProperty == "ImageColor3" and "ImageTransparency" or "TextTransparency"
-	local EntranceInfo = TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out, 0, false, 0.1 + Index * 0.06)
+	local EntranceInfo = TweenInfo.new(0.45, Enum.EasingStyle.Quint, Enum.EasingDirection.Out, 0, false, 0.1 + Index * 0.05)
 
-	Button.Position = UDim2.fromOffset(FinalPosition.X.Offset - 40, FinalPosition.Y.Offset)
 	Icon[FadeProperty] = 1
-	TweenService:Create(Button, EntranceInfo, {Position = FinalPosition}):Play()
+	Label.TextTransparency = 1
 	TweenService:Create(Icon, EntranceInfo, {[FadeProperty] = 0}):Play()
+	TweenService:Create(Label, EntranceInfo, {TextTransparency = 0}):Play()
 
 	local Page = Create("ScrollingFrame", {
 		Name = TabOptions.Name .. "Tab",
@@ -1415,10 +1527,13 @@ function WindowClass.AddTab(Self, TabOptions)
 		Name = TabOptions.Name,
 		Index = Index,
 		Window = Self,
+		Category = Category,
 		Button = Button,
 		ButtonStroke = ButtonStroke,
 		ButtonGlow = ButtonGlow,
 		Icon = Icon,
+		Label = Label,
+		Bar = Bar,
 		ColorProperty = ColorProperty,
 		Page = Page,
 		Columns = Columns,
@@ -1428,39 +1543,25 @@ function WindowClass.AddTab(Self, TabOptions)
 
 	table.insert(Self.Tabs, Tab)
 
+	if Category then
+		table.insert(Category.Tabs, Tab)
+	end
+
 	Button.MouseButton1Click:Connect(function()
 		Self:SelectTab(Tab)
 	end)
 
 	Button.MouseEnter:Connect(function()
-		if ColorProperty == "ImageColor3" then
-			Tween(Icon, Animations.Spring, {Size = UDim2.fromOffset(25, 25)})
-		end
-
 		if Self.ActiveTab ~= Tab then
 			Tween(Icon, Animations.Fast, {[ColorProperty] = Theme.Text})
+			Tween(Label, Animations.Fast, {TextColor3 = Theme.Text})
 		end
-
-		local Position = Button.AbsolutePosition
-		local Tooltip = Self.Tooltip
-
-		Tooltip.Text = TabOptions.Name
-		Tooltip.Position = UDim2.fromOffset(Position.X + Button.AbsoluteSize.X + 6, Position.Y + 8)
-		Tooltip.Visible = true
-		Tween(Tooltip, Animations.Smooth, {Position = UDim2.fromOffset(Position.X + Button.AbsoluteSize.X + 14, Position.Y + 8)})
 	end)
 
 	Button.MouseLeave:Connect(function()
-		if ColorProperty == "ImageColor3" then
-			Tween(Icon, Animations.Spring, {Size = UDim2.fromOffset(20, 20)})
-		end
-
 		if Self.ActiveTab ~= Tab then
 			Tween(Icon, Animations.Fast, {[ColorProperty] = Theme.SubText})
-		end
-
-		if Self.Tooltip.Text == TabOptions.Name then
-			Self.Tooltip.Visible = false
+			Tween(Label, Animations.Fast, {TextColor3 = Theme.SubText})
 		end
 	end)
 
